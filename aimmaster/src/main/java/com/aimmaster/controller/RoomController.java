@@ -3,6 +3,8 @@ package com.aimmaster.controller;
 import com.aimmaster.dto.CreateRoomRequest;
 import com.aimmaster.dto.JoinRoomRequest;
 import com.aimmaster.dto.RoomResponse;
+import com.aimmaster.dto.StartMatchRequest;
+import com.aimmaster.service.GameSessionManager;
 import com.aimmaster.service.RoomService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -21,9 +23,11 @@ import java.util.List;
 public class RoomController {
 
     private final RoomService roomService;
+    private final GameSessionManager gameSessionManager;
 
-    public RoomController(RoomService roomService) {
+    public RoomController(RoomService roomService, GameSessionManager gameSessionManager) {
         this.roomService = roomService;
+        this.gameSessionManager = gameSessionManager;
     }
 
     @PostMapping
@@ -43,5 +47,20 @@ public class RoomController {
     public ResponseEntity<List<RoomResponse>> listRooms() {
         List<RoomResponse> rooms = roomService.listRooms();
         return ResponseEntity.ok(rooms);
+    }
+
+    @PostMapping("/{id}/start")
+    public ResponseEntity<Void> startMatch(@PathVariable Integer id) {
+        boolean started = gameSessionManager.startMatch(id);
+        if (!started) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/stop")
+    public ResponseEntity<Void> stopMatch(@PathVariable Integer id) {
+        gameSessionManager.stopMatch(id);
+        return ResponseEntity.ok().build();
     }
 }

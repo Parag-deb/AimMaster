@@ -98,4 +98,8 @@ public class Room {
     public void removeTarget(Target target) {
         targets.remove(target);
     }
+
+    public void clearTargets() {
+        targets.clear();
+    }
 }

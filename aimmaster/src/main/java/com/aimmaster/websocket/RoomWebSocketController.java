@@ -4,9 +4,13 @@ import com.aimmaster.dto.FireBroadcast;
 import com.aimmaster.dto.FireRequest;
 import com.aimmaster.dto.LeaderboardBroadcast;
 import com.aimmaster.dto.LeaderboardEntry;
+import com.aimmaster.dto.StartMatchRequest;
 import com.aimmaster.dto.TestMessageBroadcast;
 import com.aimmaster.dto.TestMessageRequest;
 import com.aimmaster.entity.Player;
+import com.aimmaster.entity.Room;
+import com.aimmaster.service.GameSession;
+import com.aimmaster.service.GameSessionManager;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -23,10 +27,12 @@ import java.util.stream.Collectors;
 public class RoomWebSocketController {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final GameSessionManager gameSessionManager;
     private final ConcurrentHashMap<Integer, Set<Integer>> roomPlayers = new ConcurrentHashMap<>();
 
-    public RoomWebSocketController(SimpMessagingTemplate messagingTemplate) {
+    public RoomWebSocketController(SimpMessagingTemplate messagingTemplate, GameSessionManager gameSessionManager) {
         this.messagingTemplate = messagingTemplate;
+        this.gameSessionManager = gameSessionManager;
     }
 
     @MessageMapping("/room/{roomId}/test")
@@ -47,6 +53,8 @@ public class RoomWebSocketController {
         Integer playerId = player.getId();
         roomPlayers.computeIfAbsent(roomId, k -> new CopyOnWriteArraySet<>()).add(playerId);
 
+        gameSessionManager.handleHit(roomId, request.targetId(), playerId);
+
         FireBroadcast broadcast = new FireBroadcast(
                 request.targetId(),
                 playerId,
@@ -62,5 +70,19 @@ public class RoomWebSocketController {
 
         LeaderboardBroadcast leaderboard = new LeaderboardBroadcast(standings, System.currentTimeMillis());
         messagingTemplate.convertAndSend("/topic/room/" + roomId, leaderboard);
+    }
+
+    @MessageMapping("/room/{roomId}/start")
+    public void handleStartMatch(@AuthenticationPrincipal Player player,
+                                 Integer roomId,
+                                 StartMatchRequest request) {
+        Integer playerId = player.getId();
+        GameSession session = gameSessionManager.getSession(roomId);
+        if (session != null && session.getRoom().getHost().getId().equals(playerId)) {
+            gameSessionManager.startMatch(roomId);
+        } else {
+            messagingTemplate.convertAndSendToUser(player.getUsername(), "/queue/errors", 
+                "Only the room host can start the match");
+        }
     }
 }
