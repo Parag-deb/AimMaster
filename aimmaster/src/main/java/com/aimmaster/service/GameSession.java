@@ -40,10 +40,12 @@ public class GameSession {
 
     private final ConcurrentHashMap<Integer, Target> targets = new ConcurrentHashMap<>();
     private final Random random = new Random();
+    private final HitResolver hitResolver;
 
-    public GameSession(Room room, SimpMessagingTemplate messagingTemplate) {
+    public GameSession(Room room, SimpMessagingTemplate messagingTemplate, HitResolver hitResolver) {
         this.room = room;
         this.messagingTemplate = messagingTemplate;
+        this.hitResolver = hitResolver;
         this.executor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "GameSession-" + room.getCode());
             t.setDaemon(true);
@@ -232,13 +234,17 @@ public class GameSession {
         return room;
     }
 
-    public void handleHit(int targetId, int playerId) {
+    public boolean handleHit(int targetId, int playerId) {
         Target target = targets.get(targetId);
-        if (target != null && target.isAlive()) {
-            target.hit();
-            room.removeTarget(target);
-            targets.remove(targetId);
-            log.debug("Target {} hit by player {} in room {}", targetId, playerId, room.getCode());
+        if (target != null) {
+            boolean hit = hitResolver.resolveHit(target, playerId);
+            if (hit) {
+                room.removeTarget(target);
+                targets.remove(targetId);
+                log.debug("Target {} hit by player {} in room {}", targetId, playerId, room.getCode());
+            }
+            return hit;
         }
+        return false;
     }
 }
