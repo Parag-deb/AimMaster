@@ -12,6 +12,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -42,6 +43,10 @@ public class GameSession {
     private final Random random = new Random();
     private final HitResolver hitResolver;
 
+    // Track shots fired and hits per player for accuracy calculation
+    private final Map<Integer, AtomicInteger> shotsFired = new ConcurrentHashMap<>();
+    private final Map<Integer, AtomicInteger> hits = new ConcurrentHashMap<>();
+
     public GameSession(Room room, SimpMessagingTemplate messagingTemplate, HitResolver hitResolver) {
         this.room = room;
         this.messagingTemplate = messagingTemplate;
@@ -64,6 +69,8 @@ public class GameSession {
         elapsedMs.set(0);
 
         room.clearTargets();
+        shotsFired.clear();
+        hits.clear();
 
         gameLoopFuture = executor.scheduleAtFixedRate(this::tick, 0, TICK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         return true;
@@ -235,10 +242,15 @@ public class GameSession {
     }
 
     public boolean handleHit(int targetId, int playerId) {
+        // Track shot fired
+        shotsFired.computeIfAbsent(playerId, k -> new AtomicInteger(0)).incrementAndGet();
+
         Target target = targets.get(targetId);
         if (target != null) {
             boolean hit = hitResolver.resolveHit(target, playerId);
             if (hit) {
+                // Track successful hit
+                hits.computeIfAbsent(playerId, k -> new AtomicInteger(0)).incrementAndGet();
                 room.removeTarget(target);
                 targets.remove(targetId);
                 log.debug("Target {} hit by player {} in room {}", targetId, playerId, room.getCode());
@@ -246,5 +258,23 @@ public class GameSession {
             return hit;
         }
         return false;
+    }
+
+    public int getShotsFired(int playerId) {
+        AtomicInteger count = shotsFired.get(playerId);
+        return count != null ? count.get() : 0;
+    }
+
+    public int getHits(int playerId) {
+        AtomicInteger count = hits.get(playerId);
+        return count != null ? count.get() : 0;
+    }
+
+    public double getAccuracy(int playerId) {
+        int shots = getShotsFired(playerId);
+        if (shots == 0) {
+            return 0.0;
+        }
+        return (double) getHits(playerId) / shots;
     }
 }

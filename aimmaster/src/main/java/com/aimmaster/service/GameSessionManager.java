@@ -1,13 +1,16 @@
 package com.aimmaster.service;
 
+import com.aimmaster.entity.MatchRecord;
 import com.aimmaster.entity.Player;
 import com.aimmaster.entity.Room;
+import com.aimmaster.repository.MatchRecordRepository;
 import com.aimmaster.repository.RoomRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,14 +21,17 @@ public class GameSessionManager {
     private static final Logger log = LoggerFactory.getLogger(GameSessionManager.class);
 
     private final RoomRepository roomRepository;
+    private final MatchRecordRepository matchRecordRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final HitResolver hitResolver;
     private final Leaderboard leaderboard;
     private final Map<Integer, GameSession> sessions = new ConcurrentHashMap<>();
 
-    public GameSessionManager(RoomRepository roomRepository, SimpMessagingTemplate messagingTemplate,
+    public GameSessionManager(RoomRepository roomRepository, MatchRecordRepository matchRecordRepository,
+                              SimpMessagingTemplate messagingTemplate,
                               HitResolver hitResolver, Leaderboard leaderboard) {
         this.roomRepository = roomRepository;
+        this.matchRecordRepository = matchRecordRepository;
         this.messagingTemplate = messagingTemplate;
         this.hitResolver = hitResolver;
         this.leaderboard = leaderboard;
@@ -64,9 +70,35 @@ public class GameSessionManager {
     public synchronized void stopMatch(Integer roomId) {
         GameSession session = sessions.remove(roomId);
         if (session != null) {
+            // Persist match records before stopping
+            persistMatchRecords(roomId, session);
             session.stop();
             leaderboard.clearRoom(roomId);
             log.info("Match stopped for room {}", roomId);
+        }
+    }
+
+    private void persistMatchRecords(Integer roomId, GameSession session) {
+        Room room = roomRepository.findById(roomId).orElse(null);
+        if (room == null) {
+            log.warn("Cannot persist match records: room {} not found", roomId);
+            return;
+        }
+
+        Instant timestamp = Instant.now();
+        for (Player player : room.getPlayers()) {
+            int playerId = player.getId();
+            int score = leaderboard.getScore(roomId, playerId);
+            int shots = session.getShotsFired(playerId);
+            int hitCount = session.getHits(playerId);
+            double accuracy = session.getAccuracy(playerId);
+
+            MatchRecord record = new MatchRecord(
+                    playerId, roomId, score, accuracy, shots, hitCount, timestamp
+            );
+            matchRecordRepository.save(record);
+            log.info("Saved MatchRecord for player {} in room {}: score={}, accuracy={:.2%}, shots={}, hits={}",
+                    playerId, roomId, score, accuracy, shots, hitCount);
         }
     }
 

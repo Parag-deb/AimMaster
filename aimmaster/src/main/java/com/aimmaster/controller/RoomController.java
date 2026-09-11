@@ -2,8 +2,11 @@ package com.aimmaster.controller;
 
 import com.aimmaster.dto.CreateRoomRequest;
 import com.aimmaster.dto.JoinRoomRequest;
+import com.aimmaster.dto.MatchRecordResponse;
 import com.aimmaster.dto.RoomResponse;
 import com.aimmaster.dto.StartMatchRequest;
+import com.aimmaster.entity.MatchRecord;
+import com.aimmaster.repository.MatchRecordRepository;
 import com.aimmaster.service.GameSessionManager;
 import com.aimmaster.service.RoomService;
 import jakarta.validation.Valid;
@@ -24,10 +27,13 @@ public class RoomController {
 
     private final RoomService roomService;
     private final GameSessionManager gameSessionManager;
+    private final MatchRecordRepository matchRecordRepository;
 
-    public RoomController(RoomService roomService, GameSessionManager gameSessionManager) {
+    public RoomController(RoomService roomService, GameSessionManager gameSessionManager,
+                          MatchRecordRepository matchRecordRepository) {
         this.roomService = roomService;
         this.gameSessionManager = gameSessionManager;
+        this.matchRecordRepository = matchRecordRepository;
     }
 
     @PostMapping
@@ -62,5 +68,27 @@ public class RoomController {
     public ResponseEntity<Void> stopMatch(@PathVariable Integer id) {
         gameSessionManager.stopMatch(id);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/leaderboard")
+    public ResponseEntity<List<MatchRecordResponse>> getRoomLeaderboard(@PathVariable Integer id) {
+        List<MatchRecord> records = matchRecordRepository.findByRoomIdOrderByScoreDesc(id);
+        List<MatchRecordResponse> response = records.stream()
+                .map(this::toResponse)
+                .toList();
+        return ResponseEntity.ok(response);
+    }
+
+    private MatchRecordResponse toResponse(MatchRecord record) {
+        return new MatchRecordResponse(
+                record.getId(),
+                record.getPlayerId(),
+                record.getRoomId(),
+                record.getScore(),
+                record.getAccuracy(),
+                record.getShotsFired(),
+                record.getHits(),
+                record.getTimestamp()
+        );
     }
 }
