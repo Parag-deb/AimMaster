@@ -22,12 +22,14 @@
             background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center;
             z-index: 20; flex-direction: column;
         }
-        .panel { background: #222; padding: 30px; border-radius: 10px; min-width: 300px; }
+        .panel { background: #222; padding: 30px; border-radius: 10px; min-width: 300px; max-width: 500px; max-height: 80vh; overflow-y: auto; }
         .panel h2 { margin-top: 0; text-align: center; }
         input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; font-size: 14px; }
         button { background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
         button:hover { background: #0056b3; }
         button:disabled { background: #555; cursor: not-allowed; }
+        button.host-btn { background: #28a745; }
+        button.host-btn:hover { background: #218838; }
         #status { color: #888; font-size: 12px; text-align: center; margin-top: 10px; }
         #fire-indicator { position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
             font-size: 36px; font-weight: bold; color: #ff3333; z-index: 8; opacity: 0; transition: opacity 0.1s; }
@@ -36,6 +38,14 @@
         #leaderboard h4 { margin: 0 0 5px; text-align: center; font-size: 14px; }
         .lb-entry { padding: 2px 0; border-bottom: 1px solid #333; }
         .lb-entry.first { color: gold; font-weight: bold; }
+        #connection-status { position: absolute; top: 55px; left: 10px; z-index: 8; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+        #connection-status.connected { background: rgba(40,167,69,0.8); color: #fff; }
+        #connection-status.disconnected { background: rgba(220,53,69,0.8); color: #fff; }
+        #history-section { margin-top: 15px; border-top: 1px solid #444; padding-top: 10px; }
+        #history-section h3 { margin: 0 0 5px; font-size: 14px; }
+        .hist-entry { padding: 2px 0; font-size: 12px; border-bottom: 1px solid #333; }
+        #start-match-btn { background: #28a745; margin-top: 10px; }
+        #start-match-btn:hover { background: #218838; }
     </style>
 </head>
 <body>
@@ -46,6 +56,7 @@
             <span id="match-timer">00:00</span>
         </div>
         <div id="fire-indicator">FIRE!</div>
+        <div id="connection-status" class="disconnected" style="display:none;">Disconnected</div>
         <div id="leaderboard"><h4>Leaderboard</h4><div id="lb-entries"></div></div>
         <canvas id="canvas" width="1280" height="720"></canvas>
         <video id="webcam" autoplay playsinline></video>
@@ -73,6 +84,7 @@
                 <input type="text" id="host-code" placeholder="Create room (set code)">
                 <input type="number" id="host-duration" placeholder="Duration (seconds)" value="120" min="10" max="3600">
                 <button onclick="createRoom()">Create Room</button>
+                <button id="start-match-btn" onclick="startMatch()" style="display:none;" class="host-btn">Start Match</button>
                 <div id="lobby-status"></div>
             </div>
         </div>
@@ -81,6 +93,10 @@
             <div class="panel">
                 <h2>Match Over</h2>
                 <p id="match-summary">Loading...</p>
+                <div id="history-section">
+                    <h3>Match History</h3>
+                    <div id="history-entries">Loading...</div>
+                </div>
                 <button onclick="showLogin()">Back to Login</button>
             </div>
         </div>
@@ -171,11 +187,64 @@
             }
         }
 
+        function startMatch() {
+            stompClient.send('/app/room/' + currentRoomId + '/start', {}, JSON.stringify({}));
+            document.getElementById('start-match-btn').style.display = 'none';
+        }
+
+        function loadHistory() {
+            fetch('/api/players/' + playerId + '/history', {
+                headers: { 'Authorization': 'Bearer ' + jwtToken }
+            })
+            .then(function (res) {
+                if (!res.ok) return [];
+                return res.json();
+            })
+            .then(function (records) {
+                const container = document.getElementById('history-entries');
+                if (!records || records.length === 0) {
+                    container.innerHTML = '<div class="hist-entry">No match history yet</div>';
+                    return;
+                }
+                container.innerHTML = records.map(function (r) {
+                    const acc = r.accuracy != null ? Math.round(r.accuracy * 100) + '%' : '-';
+                    return '<div class="hist-entry">Room ' + r.roomId + ': Score ' + r.score +
+                        ' | Hits ' + r.hits + '/' + r.shotsFired + ' | Accuracy ' + acc +
+                        ' | ' + new Date(r.timestamp).toLocaleString() + '</div>';
+                }).join('');
+            })
+            .catch(function () {
+                document.getElementById('history-entries').innerHTML = '<div class="hist-entry">History unavailable</div>';
+            });
+        }
+
         function showLogin() {
             matchRunning = false;
             if (stompClient) stompClient.disconnect();
             showPanel('login-panel');
             document.getElementById('room-info').textContent = 'No room';
+            document.getElementById('start-match-btn').style.display = 'none';
+        }
+
+        function updateConnectionStatus(connected) {
+            const el = document.getElementById('connection-status');
+            if (connected) {
+                el.textContent = 'Connected';
+                el.className = 'connected';
+            } else {
+                el.textContent = 'Disconnected — reconnecting...';
+                el.className = 'disconnected';
+            }
+            el.style.display = 'block';
+        }
+
+        function tryReconnect() {
+            updateConnectionStatus(false);
+            setTimeout(function () {
+                if (currentRoomId && jwtToken) {
+                    connectWebSocket();
+                }
+            }, 3000);
         }
 
         // ==================== Room ====================
@@ -193,6 +262,9 @@
                 document.getElementById('room-info').textContent = 'Room: ' + data.code;
                 document.getElementById('lobby-status').textContent = 'Joined room ' + data.code + '!';
                 setStatus('lobby-status', 'Joined!', '#00ff00');
+                if (data.hostUsername === playerUsername) {
+                    document.getElementById('start-match-btn').style.display = 'block';
+                }
                 connectWebSocket();
             } catch (err) {
                 setStatus('lobby-status', 'Join failed: ' + err.message, '#ff0000');
@@ -219,6 +291,7 @@
                 document.getElementById('room-info').textContent = 'Room: ' + data.code;
                 document.getElementById('lobby-status').textContent = 'Created room ' + data.code + '!';
                 setStatus('lobby-status', 'Created!', '#00ff00');
+                document.getElementById('start-match-btn').style.display = 'block';
                 connectWebSocket();
             } catch (err) {
                 setStatus('lobby-status', 'Create failed: ' + err.message, '#ff0000');
@@ -227,6 +300,7 @@
 
         // ==================== WebSocket ====================
         function connectWebSocket() {
+            updateConnectionStatus(true);
             const socket = new SockJS('/ws');
             stompClient = Stomp.over(socket);
             stompClient.connect(
@@ -234,14 +308,21 @@
                 function (frame) {
                     document.getElementById('lobby-status').textContent = 'Connected!';
                     setStatus('lobby-status', 'Connected', '#00ff00');
+                    updateConnectionStatus(true);
                     stompClient.subscribe('/topic/room/' + currentRoomId, function (message) {
                         handleServerBroadcast(message.body);
                     });
                 },
                 function (error) {
                     setStatus('lobby-status', 'Connection error', '#ff0000');
+                    updateConnectionStatus(false);
+                    tryReconnect();
                 }
             );
+            stompClient.onDisconnect = function () {
+                updateConnectionStatus(false);
+                tryReconnect();
+            };
         }
 
         function handleServerBroadcast(body) {
@@ -258,6 +339,9 @@
                 }
                 if (data.hitByPlayerId !== undefined) {
                     showFireConfirmation(data);
+                }
+                if (data.running === false) {
+                    loadHistory();
                 }
             } catch (e) {
                 console.log('Broadcast parse:', body);
