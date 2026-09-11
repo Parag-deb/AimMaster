@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AimMaster - Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        body { margin: 0; background: #111; color: #fff; font-family: Arial, sans-serif; overflow: hidden; }
+        #top-bar { position: absolute; top: 0; left: 0; right: 0; height: 50px; background: rgba(0,0,0,0.8); display: flex; align-items: center; padding: 0 15px; z-index: 10; }
+        #top-bar span { margin-right: 20px; }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        #webcam { position: absolute; left: 10px; bottom: 10px; width: 240px; height: 180px; border: 2px solid #444; border-radius: 8px; z-index: 5; }
+        #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #hand-canvas { position: absolute; left: 10px; bottom: 10px; width: 240px; height: 180px; z-index: 6; pointer-events: none; }
+        #login-panel, #lobby-panel, #post-match-panel {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center;
+            z-index: 20; flex-direction: column;
+        }
+        .panel { background: #222; padding: 30px; border-radius: 10px; min-width: 300px; }
+        .panel h2 { margin-top: 0; text-align: center; }
+        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; font-size: 14px; }
+        button { background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #status { color: #888; font-size: 12px; text-align: center; margin-top: 10px; }
+        #fire-indicator { position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+            font-size: 36px; font-weight: bold; color: #ff3333; z-index: 8; opacity: 0; transition: opacity 0.1s; }
+        #leaderboard { position: absolute; top: 55px; right: 10px; background: rgba(0,0,0,0.7);
+            padding: 10px; border-radius: 5px; z-index: 8; min-width: 150px; font-size: 13px; }
+        #leaderboard h4 { margin: 0 0 5px; text-align: center; font-size: 14px; }
+        .lb-entry { padding: 2px 0; border-bottom: 1px solid #333; }
+        .lb-entry.first { color: gold; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="top-bar">
+            <span id="player-info">Not logged in</span>
+            <span id="room-info">No room</span>
+            <span id="match-timer">00:00</span>
+        </div>
+        <div id="fire-indicator">FIRE!</div>
+        <div id="leaderboard"><h4>Leaderboard</h4><div id="lb-entries"></div></div>
+        <canvas id="canvas" width="1280" height="720"></canvas>
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="hand-canvas" width="240" height="180"></canvas>
+
+        <div id="login-panel">
+            <div class="panel">
+                <h2>Login</h2>
+                <input type="text" id="login-username" placeholder="Username" value="demo1">
+                <input type="password" id="login-password" placeholder="Password" value="demo123@23">
+                <button onclick="login()">Login</button>
+                <p style="text-align:center;color:#888;font-size:12px;">or</p>
+                <input type="text" id="register-username" placeholder="New username">
+                <input type="password" id="register-password" placeholder="New password">
+                <button onclick="register()">Register</button>
+                <div id="login-status"></div>
+            </div>
+        </div>
+
+        <div id="lobby-panel" style="display:none;">
+            <div class="panel">
+                <h2>Room</h2>
+                <input type="text" id="room-code" placeholder="Enter room code to join">
+                <button onclick="joinRoom()">Join Room</button>
+                <input type="text" id="host-code" placeholder="Create room (set code)">
+                <input type="number" id="host-duration" placeholder="Duration (seconds)" value="120" min="10" max="3600">
+                <button onclick="createRoom()">Create Room</button>
+                <div id="lobby-status"></div>
+            </div>
+        </div>
+
+        <div id="post-match-panel" style="display:none;">
+            <div class="panel">
+                <h2>Match Over</h2>
+                <p id="match-summary">Loading...</p>
+                <button onclick="showLogin()">Back to Login</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== State ====================
+        let jwtToken = null;
+        let playerId = null;
+        let playerUsername = null;
+        let currentRoomId = null;
+        let currentRoomCode = null;
+        let stompClient = null;
+        let matchRunning = false;
+        let matchStartTime = 0;
+        let timerInterval = null;
+
+        // ==================== MediaPipe State ====================
+        let hands = null;
+        let camera = null;
+        let handX = 640, handY = 360; // aim reticle position
+        let isFiring = false;
+        let fireDebounce = false;
+
+        // ==================== Game State ====================
+        let targets = [];
+        let score = 0;
+        let shotsFired = 0;
+        let hits = 0;
+
+        // ==================== Canvas ====================
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const handCanvas = document.getElementById('hand-canvas');
+        const handCtx = handCanvas.getContext('2d');
+
+        // ==================== Utility ====================
+        function showPanel(id) {
+            ['login-panel', 'lobby-panel', 'post-match-panel'].forEach(p => {
+                document.getElementById(p).style.display = 'none';
+            });
+            document.getElementById(id).style.display = 'flex';
+        }
+
+        function setStatus(elementId, text, color) {
+            const el = document.getElementById(elementId);
+            if (el) { el.textContent = text; el.style.color = color || '#888'; }
+        }
+
+        // ==================== Auth ====================
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                jwtToken = data.token;
+                playerId = data.playerId;
+                playerUsername = data.username;
+                document.getElementById('player-info').textContent = 'Player: ' + data.username;
+                document.getElementById('login-status').textContent = 'Login successful!';
+                setStatus('login-status', 'Login successful!', '#00ff00');
+                showPanel('lobby-panel');
+                startMediaPipe();
+            } catch (err) {
+                setStatus('login-status', 'Login failed: ' + err.message, '#ff0000');
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (!res.ok) throw new Error(await res.text());
+                setStatus('login-status', 'Registration successful! Please login.', '#00ff00');
+            } catch (err) {
+                setStatus('login-status', 'Registration failed: ' + err.message, '#ff0000');
+            }
+        }
+
+        function showLogin() {
+            matchRunning = false;
+            if (stompClient) stompClient.disconnect();
+            showPanel('login-panel');
+            document.getElementById('room-info').textContent = 'No room';
+        }
+
+        // ==================== Room ====================
+        async function joinRoom() {
+            const code = document.getElementById('room-code').value;
+            try {
+                const res = await fetch('/api/rooms/' + encodeURIComponent(code) + '/join', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + jwtToken }
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                currentRoomId = data.id;
+                currentRoomCode = data.code;
+                document.getElementById('room-info').textContent = 'Room: ' + data.code;
+                document.getElementById('lobby-status').textContent = 'Joined room ' + data.code + '!';
+                setStatus('lobby-status', 'Joined!', '#00ff00');
+                connectWebSocket();
+            } catch (err) {
+                setStatus('lobby-status', 'Join failed: ' + err.message, '#ff0000');
+            }
+        }
+
+        async function createRoom() {
+            const code = document.getElementById('host-code').value;
+            const duration = parseInt(document.getElementById('host-duration').value);
+            try {
+                const res = await fetch('/api/rooms', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + jwtToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code, durationSeconds: duration, maxPlayers: 4, difficulty: 'BIRD' })
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                currentRoomId = data.id;
+                currentRoomCode = data.code;
+                playerId = data.hostId || playerId;
+                document.getElementById('room-info').textContent = 'Room: ' + data.code;
+                document.getElementById('lobby-status').textContent = 'Created room ' + data.code + '!';
+                setStatus('lobby-status', 'Created!', '#00ff00');
+                connectWebSocket();
+            } catch (err) {
+                setStatus('lobby-status', 'Create failed: ' + err.message, '#ff0000');
+            }
+        }
+
+        // ==================== WebSocket ====================
+        function connectWebSocket() {
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.connect(
+                { Authorization: 'Bearer ' + jwtToken },
+                function (frame) {
+                    document.getElementById('lobby-status').textContent = 'Connected!';
+                    setStatus('lobby-status', 'Connected', '#00ff00');
+                    stompClient.subscribe('/topic/room/' + currentRoomId, function (message) {
+                        handleServerBroadcast(message.body);
+                    });
+                },
+                function (error) {
+                    setStatus('lobby-status', 'Connection error', '#ff0000');
+                }
+            );
+        }
+
+        function handleServerBroadcast(body) {
+            try {
+                const data = JSON.parse(body);
+                // FireBroadcast: {targetId, hitByPlayerId, newScore, timestamp}
+                // LeaderboardBroadcast: {standings, timestamp}
+                // ArenaStateBroadcast: {roomId, targetStates, elapsedMs, running}
+                if (data.standings) {
+                    updateLeaderboard(data.standings);
+                }
+                if (data.targetStates) {
+                    updateTargets(data.targetStates, data.running);
+                }
+                if (data.hitByPlayerId !== undefined) {
+                    showFireConfirmation(data);
+                }
+            } catch (e) {
+                console.log('Broadcast parse:', body);
+            }
+        }
+
+        function sendFire(targetId) {
+            if (!stompClient || !stompClient.connected) return;
+            shotsFired++;
+            stompClient.send('/app/room/' + currentRoomId + '/fire', {}, JSON.stringify({
+                targetId: targetId
+            }));
+        }
+
+        // ==================== Leaderboard ====================
+        function updateLeaderboard(standings) {
+            const container = document.getElementById('lb-entries');
+            container.innerHTML = '';
+            if (!standings || standings.length === 0) {
+                container.innerHTML = '<div class="lb-entry">No scores yet</div>';
+                return;
+            }
+            standings.forEach(function (entry, idx) {
+                const div = document.createElement('div');
+                div.className = 'lb-entry' + (idx === 0 ? ' first' : '');
+                div.textContent = entry.username + ': ' + entry.score;
+                container.appendChild(div);
+            });
+        }
+
+        // ==================== MediaPipe ====================
+        function startMediaPipe() {
+            hands = new Hands({
+                locateFile: function (file) {
+                    return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/' + file;
+                }
+            });
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            hands.onResults(onHandResults);
+
+            camera = new Camera(document.getElementById('webcam'), {
+                onFrame: async function () {
+                    if (hands) await hands.send({ image: document.getElementById('webcam') });
+                },
+                width: 240,
+                height: 180
+            });
+            camera.start();
+        }
+
+        function onHandResults(results) {
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                drawConnectors(handCtx, landmarks, HAND_CONNECTIONS, { color: '#00ff00', lineWidth: 2 });
+                drawLandmarks(handCtx, landmarks, { color: '#ff0000', lineWidth: 1, radius: 3 });
+
+                // Index finger tip = reticle position (mirrored)
+                const indexTip = landmarks[8];
+                handX = (1 - indexTip.x) * canvas.width;
+                handY = indexTip.y * canvas.height;
+
+                // Thumb fold detection
+                isFiring = isThumbFolded(landmarks);
+                document.getElementById('fire-indicator').style.opacity = isFiring ? '1' : '0';
+
+                if (isFiring && !fireDebounce && matchRunning) {
+                    fireDebounce = true;
+                    // Find nearest alive target
+                    let closestId = null;
+                    let closestDist = 80;
+                    targets.forEach(function (t) {
+                        if (t.alive) {
+                            const dist = Math.hypot(t.x - handX, t.y - handY);
+                            if (dist < closestDist) {
+                                closestDist = dist;
+                                closestId = t.id;
+                            }
+                        }
+                    });
+                    if (closestId !== null) {
+                        sendFire(closestId);
+                    }
+                    setTimeout(function () { fireDebounce = false; }, 500);
+                }
+            }
+        }
+
+        function isThumbFolded(landmarks) {
+            const thumbTip = landmarks[4];
+            const indexMCP = landmarks[5];
+            const thumbIP = landmarks[3];
+            const thumbMCP = landmarks[2];
+            const thumbLen = Math.hypot(thumbTip.x - thumbMCP.x, thumbTip.y - thumbMCP.y);
+            const thumbToIndex = Math.hypot(thumbTip.x - indexMCP.x, thumbTip.y - indexMCP.y);
+            return thumbLen > 0 && (thumbToIndex / thumbLen) < 0.9;
+        }
+
+        // ==================== Canvas Rendering ====================
+        function updateTargets(targetStates, running) {
+            if (!matchRunning && running) {
+                matchRunning = true;
+                startMatchTimer();
+            }
+            if (running === false && matchRunning) {
+                matchRunning = false;
+                stopMatchTimer();
+                showPostMatch();
+            }
+            targets = targetStates.map(function (ts) {
+                return { id: ts.id, type: ts.type, x: ts.x, y: ts.y, alive: true };
+            });
+        }
+
+        function renderLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw arena border
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+
+            // Draw targets
+            targets.forEach(function (t) {
+                if (!t.alive) return;
+                let color = '#ff4444';
+                if (t.type === 'BALLOON') color = '#4488ff';
+                if (t.type === 'FRUIT') color = '#44cc44';
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                if (t.type === 'BIRD') {
+                    ctx.ellipse(t.x, t.y, 20, 10, 0, 0, Math.PI * 2);
+                } else if (t.type === 'BALLOON') {
+                    ctx.arc(t.x, t.y, 18, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#666';
+                    ctx.beginPath();
+                    ctx.moveTo(t.x, t.y + 18);
+                    ctx.lineTo(t.x, t.y + 40);
+                    ctx.stroke();
+                    return;
+                } else {
+                    ctx.arc(t.x, t.y, 16, 0, Math.PI * 2);
+                }
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(t.id, t.x, t.y + 4);
+            });
+
+            // Draw reticle
+            ctx.strokeStyle = isFiring ? '#ff0000' : '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(handX, handY, 20, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(handX - 30, handY);
+            ctx.lineTo(handX - 10, handY);
+            ctx.moveTo(handX + 10, handY);
+            ctx.lineTo(handX + 30, handY);
+            ctx.moveTo(handX, handY - 30);
+            ctx.lineTo(handX, handY - 10);
+            ctx.moveTo(handX, handY + 10);
+            ctx.lineTo(handX, handY + 30);
+            ctx.stroke();
+            ctx.fillStyle = isFiring ? '#ff0000' : '#ffffff';
+            ctx.beginPath();
+            ctx.arc(handX, handY, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        // ==================== Match Timer ====================
+        function startMatchTimer() {
+            matchStartTime = Date.now();
+            timerInterval = setInterval(function () {
+                const elapsed = Math.floor((Date.now() - matchStartTime) / 1000);
+                const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                const secs = String(elapsed % 60).padStart(2, '0');
+                document.getElementById('match-timer').textContent = mins + ':' + secs;
+            }, 1000);
+        }
+
+        function stopMatchTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+        }
+
+        function showPostMatch() {
+            stopMatchTimer();
+            const accuracy = shotsFired > 0 ? Math.round((hits / shotsFired) * 100) : 0;
+            document.getElementById('match-summary').textContent =
+                'Final Score: ' + score + ' | Hits: ' + hits + '/' + shotsFired +
+                ' | Accuracy: ' + accuracy + '%';
+            showPanel('post-match-panel');
+        }
+
+        function showFireConfirmation(data) {
+            if (data.hitByPlayerId === playerId) {
+                hits++;
+                score = data.newScore;
+            }
+        }
+
+        // ==================== Init ====================
+        renderLoop();
+    </script>
+</body>
+</html>
