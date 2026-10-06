@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="regular">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
     <style>
-        :root {
+        :root, [data-theme="regular"] {
             --bg-deep: #06111f;
             --bg-panel: rgba(12, 25, 43, 0.86);
             --bg-panel-solid: #0d1c30;
@@ -26,6 +26,38 @@
             --shadow: 0 20px 60px rgba(0, 0, 0, 0.42);
         }
 
+        [data-theme="dark"] {
+            --bg-deep: #020408;
+            --bg-panel: rgba(4, 8, 16, 0.92);
+            --bg-panel-solid: #060a12;
+            --line: rgba(100, 160, 255, 0.15);
+            --line-strong: rgba(100, 160, 255, 0.35);
+            --text: #e6ecff;
+            --muted: #7b86a3;
+            --cyan: #2ec4ff;
+            --blue: #3d7aff;
+            --green: #38d494;
+            --orange: #f0a040;
+            --red: #f04860;
+            --shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+        }
+
+        [data-theme="light"] {
+            --bg-deep: #f0f4fa;
+            --bg-panel: rgba(255, 255, 255, 0.9);
+            --bg-panel-solid: #ffffff;
+            --line: rgba(0, 0, 0, 0.1);
+            --line-strong: rgba(0, 0, 0, 0.2);
+            --text: #1a1f2e;
+            --muted: #5a6478;
+            --cyan: #0090b3;
+            --blue: #2563eb;
+            --green: #0d8a5e;
+            --orange: #c2751a;
+            --red: #c41e3a;
+            --shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
+        }
+
         * { box-sizing: border-box; }
 
         body {
@@ -37,8 +69,15 @@
             background:
                 radial-gradient(circle at 15% 15%, rgba(37, 105, 190, 0.22), transparent 32%),
                 radial-gradient(circle at 85% 75%, rgba(25, 210, 255, 0.13), transparent 30%),
-                linear-gradient(145deg, #050b14 0%, #09182b 48%, #050b14 100%);
+                linear-gradient(145deg, var(--bg-deep) 0%, color-mix(in srgb, var(--bg-deep) 90%, #fff) 48%, var(--bg-deep) 100%);
             font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        [data-theme="light"] body {
+            background:
+                radial-gradient(circle at 15% 15%, rgba(37, 105, 190, 0.08), transparent 32%),
+                radial-gradient(circle at 85% 75%, rgba(25, 210, 255, 0.06), transparent 30%),
+                linear-gradient(145deg, #e8eef6 0%, #f0f4fa 48%, #e8eef6 100%);
         }
 
         #game-container {
@@ -119,6 +158,22 @@
         .topbar-stat strong { color: var(--text); font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         #match-timer { color: var(--cyan); font-variant-numeric: tabular-nums; font-size: 18px !important; font-weight: 800 !important; letter-spacing: 0.08em; }
         .topbar-spacer { flex: 1; }
+        .nav-btn {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: var(--bg-panel-solid);
+            color: var(--text);
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .nav-btn:hover {
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
 
         #connection-status {
             display: inline-flex;
@@ -329,6 +384,9 @@
             <div class="topbar-stat"><span class="label">Room</span><strong id="room-info">No room</strong></div>
             <div class="topbar-stat"><span class="label">Time</span><strong id="match-timer">00:00</strong></div>
             <div class="topbar-spacer"></div>
+            <button onclick="showPage('friends')" class="nav-btn">Friends</button>
+            <button onclick="showPage('settings')" class="nav-btn">Settings</button>
+            <button onclick="cycleTheme()" class="nav-btn" id="theme-btn">Theme</button>
             <div id="connection-status" class="disconnected" style="display:none;"><span class="status-dot"></span><span id="connection-label">Disconnected</span></div>
             <button id="top-start-match-btn" onclick="startMatch()" style="display:none;">Start Match</button>
         </div>
@@ -561,6 +619,35 @@
                 document.getElementById('history-entries').innerHTML = '<div class="hist-entry">History unavailable</div>';
             });
         }
+
+        const THEMES = ['regular', 'dark', 'light'];
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('aimmaster-theme', theme);
+            const btn = document.getElementById('theme-btn');
+            if (btn) btn.textContent = theme === 'light' ? '☀ Light' : theme === 'dark' ? '🌙 Dark' : '🌓 Regular';
+        }
+
+        function cycleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'regular';
+            const idx = THEMES.indexOf(current);
+            const next = THEMES[(idx + 1) % THEMES.length];
+            applyTheme(next);
+        }
+
+        function showPage(page) {
+            if (page === 'friends') {
+                window.location.href = '/friends.html';
+            } else if (page === 'settings') {
+                window.location.href = '/settings.html';
+            }
+        }
+
+        (function initTheme() {
+            const saved = localStorage.getItem('aimmaster-theme');
+            if (saved) applyTheme(saved);
+        })();
 
         function showLogin() {
             matchRunning = false;

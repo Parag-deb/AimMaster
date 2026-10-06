@@ -20,12 +20,16 @@ public class Player {
     @Column(nullable = false)
     private String password;
 
+    @Column(length = 20)
+    private String theme;
+
     protected Player() {
     }
 
     public Player(String username, String password) {
         this.username = username;
         this.password = password;
+        this.theme = "regular";
     }
 
     public Integer getId() {
@@ -42,5 +46,13 @@ public class Player {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public String getTheme() {
+        return theme;
+    }
+
+    public void setTheme(String theme) {
+        this.theme = theme;
     }
 }

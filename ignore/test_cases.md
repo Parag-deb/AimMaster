@@ -512,4 +512,79 @@ BUILD SUCCESS
 | MatchRecordTest | 2 | 6 |
 | GameSessionTrackingTest | 2 | 6 |
 | FireRateLimiterTest | 10 | 9 |
-| **Total** | **37** | — |
+| FriendRequestServiceTest | 4 | 10 |
+| FriendServiceTest | 2 | 10 |
+| SettingsServiceTest | 2 | 10 |
+| **Total** | **45** | — |
+
+---
+
+## Sprint 10 — Social & Settings (Friends, Themes, Online Status)
+
+### FriendRequestServiceTest (`com.aimmaster.service`) — *New in Sprint 10*
+
+| Test Method | Description |
+|-------------|-------------|
+| `sendRequest_createsPendingRequest()` | Sending request to another user creates PENDING request |
+| `sendRequest_toSelf_throwsException()` | Cannot send friend request to yourself |
+| `acceptRequest_createsFriendship()` | Accepting request creates Friend row and marks ACCEPTED |
+| `declineRequest_marksDeclined()` | Declining request marks it DECLINED |
+
+### FriendServiceTest (`com.aimmaster.service`) — *New in Sprint 10*
+
+| Test Method | Description |
+|-------------|-------------|
+| `getFriends_returnsFriends()` | Returns friend list with correct otherUsername |
+| `removeFriend_deletesFriendship()` | Removing friend deletes the Friend row |
+
+### SettingsServiceTest (`com.aimmaster.service`) — *New in Sprint 10*
+
+| Test Method | Description |
+|-------------|-------------|
+| `updateSettings_changesTheme()` | Updating theme saves new value |
+| `updateSettings_rejectsInvalidTheme()` | Invalid theme throws BadRequestException |
+
+### Manual Verification — Friends & Settings
+
+| Test Case | Steps | Expected Result |
+|-----------|-------|-----------------|
+| TC10.1: Send friend request | Login as Player A, go to Friends → Add Friend, enter Player B's username | Request sent successfully |
+| TC10.2: Accept friend request | Login as Player B, go to Friends → Requests, click Accept | Player B appears in both players' friend lists |
+| TC10.3: Remove friend | Go to Friends tab, click Remove on a friend | Friend removed from list |
+| TC10.4: Online status | Have two players logged in, check Friends page | Online player shows green, offline shows gray |
+| TC10.5: In-game status | Have one player in a room, check Friends page | In-game player shows cyan "In Game" |
+| TC10.6: Theme switching | Click Theme button in top bar | Theme cycles through regular → dark → light |
+| TC10.7: Settings persistence | Change theme in Settings page, reload browser | Theme remains selected |
+| TC10.8: Light theme readability | Switch to light theme | All text and panels are readable on white background |
+
+### Test Execution
+
+```bash
+cd E:\AimMaster\aimmaster
+$env:PATH = "C:\tools\maven\apache-maven-3.9.6\bin;" + $env:PATH
+mvn clean test
+```
+
+### Expected Output (Sprint 10)
+
+```
+Tests run: 45, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+### Test Breakdown by Class
+
+| Test Class | Tests | Sprint Added |
+|------------|-------|--------------|
+| PlayerTest | 1 | 2 |
+| RoomTest | 7 | 1 |
+| TargetTest | 4 | 1 |
+| HitResolverTest | 4 | 5 |
+| LeaderboardTest | 7 | 5 |
+| MatchRecordTest | 2 | 6 |
+| GameSessionTrackingTest | 2 | 6 |
+| FireRateLimiterTest | 10 | 9 |
+| FriendRequestServiceTest | 4 | 10 |
+| FriendServiceTest | 2 | 10 |
+| SettingsServiceTest | 2 | 10 |
+| **Total** | **45** | — |

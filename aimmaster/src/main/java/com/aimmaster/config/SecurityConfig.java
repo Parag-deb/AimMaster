@@ -45,6 +45,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/GameClient.html").permitAll()
                         .requestMatchers("/ws-test.html").permitAll()
+                        .requestMatchers("/friends.html").permitAll()
+                        .requestMatchers("/settings.html").permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers("/webjars/**").permitAll()
                         .anyRequest().authenticated()

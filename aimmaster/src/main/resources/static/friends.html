@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AimMaster - Friends</title>
+    <style>
+        :root, [data-theme="regular"] {
+            --bg: #06111f; --panel: #0d1c30; --line: rgba(120,190,255,0.2);
+            --text: #f4f8ff; --muted: #91a7bd; --cyan: #38e1ff; --green: #46e2a0; --red: #ff5d73;
+        }
+        [data-theme="dark"] {
+            --bg: #020408; --panel: #060a12; --line: rgba(100,160,255,0.15);
+            --text: #e6ecff; --muted: #7b86a3; --cyan: #2ec4ff; --green: #38d494; --red: #f04860;
+        }
+        [data-theme="light"] {
+            --bg: #f0f4fa; --panel: #ffffff; --line: rgba(0,0,0,0.1);
+            --text: #1a1f2e; --muted: #5a6478; --cyan: #0090b3; --green: #0d8a5e; --red: #c41e3a;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+            font-family: ui-sans-serif, system-ui, sans-serif; padding: 24px;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        h2 { margin: 0 0 16px; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+        .tabs button {
+            flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--line);
+            background: transparent; color: var(--muted); cursor: pointer;
+        }
+        .tabs button.active { background: var(--cyan); color: #04101d; border-color: var(--cyan); }
+        .card {
+            background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+            padding: 16px; margin-bottom: 12px;
+        }
+        .entry { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
+        .entry:last-child { border-bottom: 0; }
+        .entry .name { font-weight: 600; }
+        .entry .meta { font-size: 12px; color: var(--muted); }
+        .status-online { color: var(--green); }
+        .status-offline { color: var(--muted); }
+        .status-ingame { color: var(--cyan); }
+        input, select {
+            width: 100%; padding: 8px 10px; border-radius: 8px; font-size: 14px;
+            background: rgba(0,0,0,0.2); border: 1px solid var(--line); color: var(--text);
+        }
+        button.action {
+            padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line);
+            background: transparent; color: var(--text); cursor: pointer; font-size: 12px;
+        }
+        button.action:hover { border-color: var(--cyan); color: var(--cyan); }
+        button.danger { color: var(--red); }
+        button.danger:hover { border-color: var(--red); color: var(--red); }
+        button.primary { background: var(--cyan); color: #04101d; border-color: var(--cyan); font-weight: 700; }
+        .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+        .error { color: var(--red); font-size: 13px; margin-top: 8px; min-height: 16px; }
+        .success { color: var(--green); font-size: 13px; margin-top: 8px; }
+        a { color: var(--cyan); text-decoration: none; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Friends</h2>
+        <div class="tabs">
+            <button class="active" onclick="showTab('friends')" id="tab-friends">Friends</button>
+            <button onclick="showTab('requests')" id="tab-requests">Requests</button>
+            <button onclick="showTab('add')" id="tab-add">Add Friend</button>
+        </div>
+
+        <div id="panel-friends">
+            <div class="card" id="friends-list">Loading...</div>
+        </div>
+
+        <div id="panel-requests" style="display:none;">
+            <div class="card">
+                <h3 style="margin:0 0 8px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;">Received</h3>
+                <div id="received-list">No pending requests</div>
+            </div>
+            <div class="card">
+                <h3 style="margin:0 0 8px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;">Sent</h3>
+                <div id="sent-list">No pending requests</div>
+            </div>
+        </div>
+
+        <div id="panel-add" style="display:none;">
+            <div class="card">
+                <label>Send friend request</label>
+                <input type="text" id="friend-username" placeholder="Enter username">
+                <button class="primary" onclick="sendRequest()">Send Request</button>
+                <div class="error" id="error"></div>
+                <div class="success" id="success"></div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <a href="/GameClient.html"><button class="action" type="button">Back to Game</button></a>
+        </div>
+    </div>
+
+    <script>
+        const jwt = localStorage.getItem('aimmaster-jwt');
+        if (!jwt) { window.location.href = '/GameClient.html'; }
+
+        let currentTab = 'friends';
+
+        function showTab(tab) {
+            currentTab = tab;
+            ['friends', 'requests', 'add'].forEach(t => {
+                document.getElementById('panel-' + t).style.display = t === tab ? 'block' : 'none';
+                document.getElementById('tab-' + t).className = t === tab ? 'active' : '';
+            });
+            if (tab === 'friends') loadFriends();
+            if (tab === 'requests') loadRequests();
+        }
+
+        async function api(path, options = {}) {
+            const res = await fetch(path, {
+                ...options,
+                headers: {
+                    'Authorization': 'Bearer ' + jwt,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+            if (res.status === 401) { window.location.href = '/GameClient.html'; }
+            return res;
+        }
+
+        async function loadFriends() {
+            const res = await api('/api/friends');
+            if (!res.ok) { document.getElementById('friends-list').innerHTML = 'Failed to load'; return; }
+            const friends = await res.json();
+            const statusRes = await api('/api/friends/status');
+            const statuses = statusRes.ok ? await statusRes.json() : {};
+
+            let html = '';
+            if (friends.length === 0) {
+                html = '<div class="entry"><span class="meta">No friends yet</span></div>';
+            } else {
+                for (const f of friends) {
+                    const status = statuses[f.otherUsername];
+                    const online = status && status.online;
+                    const inGame = status && status.inGame;
+                    let statusText = '<span class="status-offline">Offline</span>';
+                    let statusClass = 'status-offline';
+                    if (inGame) { statusText = '<span class="status-ingame">In Game</span>'; statusClass = 'status-ingame'; }
+                    else if (online) { statusText = '<span class="status-online">Online</span>'; statusClass = 'status-online'; }
+                    html += `<div class="entry">
+                        <div><div class="name">${f.otherUsername}</div><div class="meta">${statusText}</div></div>
+                        <button class="action danger" onclick="removeFriend('${f.otherUsername}')">Remove</button>
+                    </div>`;
+                }
+            }
+            document.getElementById('friends-list').innerHTML = html || 'No friends yet';
+        }
+
+        async function loadRequests() {
+            const receivedRes = await api('/api/friends/requests/received');
+            const sentRes = await api('/api/friends/requests/sent');
+            const received = receivedRes.ok ? await receivedRes.json() : [];
+            const sent = sentRes.ok ? await sentRes.json() : [];
+
+            let recHtml = '';
+            if (received.length === 0) recHtml = '<div class="meta">No pending requests</div>';
+            else {
+                for (const r of received) {
+                    recHtml += `<div class="entry">
+                        <div><div class="name">${r.senderUsername}</div><div class="meta">${r.status}</div></div>
+                        <div>
+                            <button class="action" onclick="respondRequest(${r.id}, 'accept')">Accept</button>
+                            <button class="action danger" onclick="respondRequest(${r.id}, 'decline')">Decline</button>
+                        </div>
+                    </div>`;
+                }
+            }
+            document.getElementById('received-list').innerHTML = recHtml;
+
+            let sentHtml = '';
+            if (sent.length === 0) sentHtml = '<div class="meta">No pending requests</div>';
+            else {
+                for (const r of sent) {
+                    sentHtml += `<div class="entry">
+                        <div><div class="name">${r.recipientUsername}</div><div class="meta">${r.status}</div></div>
+                        <button class="action danger" onclick="cancelRequest(${r.id})">Cancel</button>
+                    </div>`;
+                }
+            }
+            document.getElementById('sent-list').innerHTML = sentHtml;
+        }
+
+        async function sendRequest() {
+            const username = document.getElementById('friend-username').value.trim();
+            const errorEl = document.getElementById('error');
+            const successEl = document.getElementById('success');
+            errorEl.textContent = '';
+            successEl.textContent = '';
+            if (!username) { errorEl.textContent = 'Enter a username'; return; }
+            const res = await api('/api/friends/request/' + encodeURIComponent(username), { method: 'POST' });
+            if (!res.ok) {
+                errorEl.textContent = await res.text();
+            } else {
+                successEl.textContent = 'Friend request sent!';
+                document.getElementById('friend-username').value = '';
+            }
+        }
+
+        async function respondRequest(id, action) {
+            const res = await api('/api/friends/requests/' + id + '/' + action, { method: 'POST' });
+            if (res.ok) loadRequests();
+        }
+
+        async function cancelRequest(id) {
+            const res = await api('/api/friends/requests/' + id, { method: 'DELETE' });
+            if (res.ok) loadRequests();
+        }
+
+        async function removeFriend(username) {
+            if (!confirm('Remove ' + username + ' from friends?')) return;
+            const res = await api('/api/friends/' + encodeURIComponent(username), { method: 'DELETE' });
+            if (res.ok) loadFriends();
+        }
+
+        showTab('friends');
+    </script>
+</body>
+</html>

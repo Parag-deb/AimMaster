@@ -1116,6 +1116,119 @@ All core sprints complete. Future work could include:
 
 ---
 
+# Sprint 10 — Social & Settings (Friends, Themes, Online Status) — History
+
+**Date:** 2026-10-06
+**Status:** COMPLETE — Definition of Done satisfied
+
+---
+
+## Features Implemented
+
+### 1. Friends System
+
+- **Friend entity & repository:** Mutual friendship stored as one row per pair, with unique constraint on (player1_id, player2_id)
+- **FriendRequest entity & repository:** Pending requests with PENDING/ACCEPTED/DECLINED/CANCELLED states
+- **REST API (`/api/friends/**`):**
+  - `GET /api/friends` — list current player's friends
+  - `DELETE /api/friends/{username}` — remove friend
+  - `POST /api/friends/request/{recipientUsername}` — send friend request
+  - `GET /api/friends/requests/received` — pending requests received
+  - `GET /api/friends/requests/sent` — pending requests sent
+  - `POST /api/friends/requests/{id}/accept` — accept request
+  - `POST /api/friends/requests/{id}/decline` — decline request
+  - `DELETE /api/friends/requests/{id}` — cancel sent request
+  - `GET /api/friends/status` — online/in-game status for all friends
+
+### 2. Settings System
+
+- **Settings API (`/api/settings/**`):**
+  - `GET /api/settings` — get current player's settings
+  - `PUT /api/settings` — update theme preference
+- **Player.theme field:** New column in players table, default "regular"
+- **Supported themes:** regular, dark, light
+
+### 3. Theme Switching
+
+- **Three themes implemented in GameClient.html:**
+  - `regular` — original dark theme (default)
+  - `dark` — darker variant with deeper blacks and higher contrast
+  - `light` — white/light theme with dark text on light backgrounds
+- **Theme persistence:** Saved to `localStorage` as `aimmaster-theme`
+- **Theme buttons:** Added to GameClient.html top bar; cycle through themes
+- **Settings page:** Dedicated `/settings.html` for theme selection
+
+### 4. Online / In-Game Status
+
+- **WebSocketSessionTracker extended:** Added `playerToSessions` and `playerToRooms` reverse-lookup maps
+- **Global presence:** `isOnline()` checks if player has any active WebSocket sessions
+- **In-game status:** `isInGame()` checks if player is subscribed to any room topic
+- **Friends page status:** Each friend shows Online (green), In Game (cyan), or Offline (gray)
+
+### 5. Frontend Pages
+
+- **`/friends.html`:** Tabbed interface for Friends, Requests, and Add Friend
+  - Friends tab: list friends with online/in-game status, remove button
+  - Requests tab: received requests (accept/decline) and sent requests (cancel)
+  - Add tab: send friend request by username
+- **`/settings.html`:** Theme selector dropdown, save button, links back to game
+- **GameClient.html:** Added Friends, Settings, and Theme buttons to top bar
+
+## New/Modified Files
+
+| File | Change |
+|------|--------|
+| `src/main/java/com/aimmaster/entity/Player.java` | Modified — added `theme` field |
+| `src/main/java/com/aimmaster/entity/Friend.java` | **New** — friendship entity |
+| `src/main/java/com/aimmaster/entity/FriendRequest.java` | **New** — friend request entity |
+| `src/main/java/com/aimmaster/repository/FriendRepository.java` | **New** — friends table access |
+| `src/main/java/com/aimmaster/repository/FriendRequestRepository.java` | **New** — friend_requests table access |
+| `src/main/java/com/aimmaster/service/FriendService.java` | **New** — friend list/remove logic |
+| `src/main/java/com/aimmaster/service/FriendRequestService.java` | **New** — request CRUD + online status |
+| `src/main/java/com/aimmaster/service/SettingsService.java` | **New** — theme settings |
+| `src/main/java/com/aimmaster/controller/FriendController.java` | **New** — REST endpoints |
+| `src/main/java/com/aimmaster/controller/SettingsController.java` | **New** — settings endpoints |
+| `src/main/java/com/aimmaster/config/WebSocketSessionTracker.java` | Modified — reverse lookups for online status |
+| `src/main/java/com/aimmaster/config/SecurityConfig.java` | Modified — permit friends.html, settings.html |
+| `src/main/java/com/aimmaster/websocket/RoomWebSocketController.java` | Modified — Sprint 9 rate limiting |
+| `src/main/java/com/aimmaster/service/GameSessionManager.java` | Modified — Sprint 9 rate limiting |
+| `src/main/java/com/aimmaster/dto/FireBroadcast.java` | Modified — Sprint 9 rate limiting |
+| `src/main/resources/static/GameClient.html` | Modified — theme switching, nav buttons, reconnect |
+| `src/main/resources/static/friends.html` | **New** — friends page |
+| `src/main/resources/static/settings.html` | **New** — settings page |
+| `src/test/java/com/aimmaster/service/FireRateLimiterTest.java` | **New** — Sprint 9 tests |
+| `src/test/java/com/aimmaster/service/FriendRequestServiceTest.java` | **New** — Sprint 10 tests |
+| `src/test/java/com/aimmaster/service/FriendServiceTest.java` | **New** — Sprint 10 tests |
+| `src/test/java/com/aimmaster/service/SettingsServiceTest.java` | **New** — Sprint 10 tests |
+
+## Unit Tests
+
+### New tests in Sprint 10
+
+| Test Class | Tests | Description |
+|-----------|-------|-------------|
+| `FriendRequestServiceTest` | 4 | Send request, self-request blocked, accept, decline |
+| `FriendServiceTest` | 2 | Get friends list, remove friend |
+| `SettingsServiceTest` | 2 | Theme update, invalid theme rejected |
+
+**Total: 45/45 pass** (`mvn clean test` → BUILD SUCCESS)
+
+## Definition of Done
+
+> Players can manage friends, adjust theme preference, and see online/in-game status from a friends page.
+
+| Requirement | Status |
+|-------------|--------|
+| Friend request system (send/accept/decline/cancel) | Yes |
+| Friends list with remove option | Yes |
+| Online/in-game status visible on friends page | Yes |
+| Theme switching (regular/dark/light) | Yes |
+| Settings page for preferences | Yes |
+| Theme persists across sessions | Yes (localStorage) |
+| All existing tests still pass | Yes — 45/45 |
+
+---
+
 # Sprint 9 — Advanced Features (Rate Limiting + Reconnect Recovery) — History
 
 **Date:** 2026-10-06
