@@ -4,6 +4,8 @@ public record FireBroadcast(
         Integer targetId,
         Integer hitByPlayerId,
         Integer newScore,
-        long timestamp
+        long timestamp,
+        boolean hit,
+        boolean rateLimited
 ) {
 }

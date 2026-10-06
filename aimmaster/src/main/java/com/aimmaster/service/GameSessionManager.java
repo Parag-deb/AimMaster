@@ -111,22 +111,26 @@ public class GameSessionManager {
         return session != null && session.isRunning();
     }
 
+    public boolean isRoomHost(Integer roomId, Integer playerId) {
+        Room room = roomRepository.findById(roomId).orElse(null);
+        return room != null && room.getHost() != null && room.getHost().getId().equals(playerId);
+    }
+
     public void handleHit(Integer roomId, int targetId, int playerId) {
         GameSession session = sessions.get(roomId);
         if (session != null) {
             boolean hit = session.handleHit(targetId, playerId);
             if (hit) {
-                // Award points and broadcast updated leaderboard
                 int newScore = leaderboard.addScore(roomId, playerId, 10);
-                broadcastHitResult(roomId, targetId, playerId, newScore);
+                broadcastHitResult(roomId, targetId, playerId, newScore, true, false);
                 broadcastLeaderboard(roomId);
             }
         }
     }
 
-    private void broadcastHitResult(Integer roomId, int targetId, int playerId, int newScore) {
+    private void broadcastHitResult(Integer roomId, int targetId, int playerId, int newScore, boolean hit, boolean rateLimited) {
         com.aimmaster.dto.FireBroadcast broadcast = new com.aimmaster.dto.FireBroadcast(
-                targetId, playerId, newScore, System.currentTimeMillis()
+                targetId, playerId, newScore, System.currentTimeMillis(), hit, rateLimited
         );
         messagingTemplate.convertAndSend("/topic/room/" + roomId, broadcast);
     }
