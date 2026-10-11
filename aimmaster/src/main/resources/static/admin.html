@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AimMaster — Admin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .admin-shell { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
+        .stat-cards { display: flex; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
+        .stat-card { flex: 1; min-width: 180px; background: var(--panel); border: 1px solid var(--panel-border);
+                     border-radius: var(--radius); padding: 14px 18px; }
+        .stat-card .value { font-size: 30px; font-weight: 800; color: var(--gold); }
+        .stat-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+        table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--panel-border);
+                border-radius: var(--radius); overflow: hidden; }
+        th, td { padding: 10px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--panel-border); }
+        th { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        tr:last-child td { border-bottom: none; }
+        .running { color: var(--success); font-weight: 700; }
+        .idle { color: var(--text-dim); }
+    </style>
+</head>
+<body>
+<div class="admin-shell">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h1 class="brand" style="margin:0;">AimMaster — Admin</h1>
+        <a href="/index.html"><button class="secondary" type="button">← Lobby</button></a>
+    </div>
+    <p class="hint-text">Live server snapshot, refreshed every 2 seconds. Admin accounts are listed in
+        <code>aimmaster.admin.usernames</code> in application.properties.</p>
+
+    <div id="errorBox" class="error-text"></div>
+
+    <div class="stat-cards">
+        <div class="stat-card"><div class="value" id="activeMatches">—</div><div class="label">Running matches</div></div>
+        <div class="stat-card"><div class="value" id="threadCount">—</div><div class="label">JVM threads (≈ +1 per running match)</div></div>
+        <div class="stat-card"><div class="value" id="roomCount">—</div><div class="label">Rooms with activity</div></div>
+    </div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Room</th><th>Difficulty</th><th>Status</th><th>Elapsed</th>
+            <th>Targets</th><th>Players</th><th>Spectators</th>
+        </tr>
+        </thead>
+        <tbody id="roomRows">
+        <tr><td colspan="7" class="idle">Loading…</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/admin.js"></script>
+</body>
+</html>

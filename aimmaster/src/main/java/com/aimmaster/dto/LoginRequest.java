@@ -2,11 +2,31 @@ package com.aimmaster.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
-public record LoginRequest(
-        @NotBlank(message = "Username is required")
-        String username,
+/** What the client sends to POST /api/auth/login. */
+public class LoginRequest {
 
-        @NotBlank(message = "Password is required")
-        String password
-) {
+    @NotBlank(message = "username is required")
+    private String username;
+
+    @NotBlank(message = "password is required")
+    private String password;
+
+    public LoginRequest() {
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
 }

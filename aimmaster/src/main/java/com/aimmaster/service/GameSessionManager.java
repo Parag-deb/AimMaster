@@ -1,149 +1,90 @@
 package com.aimmaster.service;
 
-import com.aimmaster.entity.MatchRecord;
-import com.aimmaster.entity.Player;
 import com.aimmaster.entity.Room;
-import com.aimmaster.repository.MatchRecordRepository;
-import com.aimmaster.repository.RoomRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import com.aimmaster.exception.MatchAlreadyRunningException;
+import com.aimmaster.exception.MatchNotRunningException;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
-import java.util.List;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * The bookkeeper: which rooms currently have a match running, and their GameSession.
+ * This is the ONLY class that creates/removes GameSession instances, which is what
+ * guarantees isolation - each room gets exactly one GameSession, each with its own
+ * thread (see GameSession's javadoc).
+ *
+ * Only the small map operations here are synchronized - never the game loop itself.
+ * A game loop tick runs entirely on its own GameSession's own executor thread, so
+ * synchronizing "is a session already running for this room code?" for a few
+ * microseconds never blocks or slows down any room's actual ticking.
+ */
 @Service
 public class GameSessionManager {
 
-    private static final Logger log = LoggerFactory.getLogger(GameSessionManager.class);
+    private final GameEngine gameEngine;
+    private final RoomBroadcaster roomBroadcaster; // Sprint 9: fans broadcasts out to players + spectators
+    private final MatchRecordService matchRecordService; // Sprint 6: persists results when a match ends
+    private final Map<String, GameSession> activeSessions = new ConcurrentHashMap<>();
 
-    private final RoomRepository roomRepository;
-    private final MatchRecordRepository matchRecordRepository;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final HitResolver hitResolver;
-    private final Leaderboard leaderboard;
-    private final Map<Integer, GameSession> sessions = new ConcurrentHashMap<>();
-
-    public GameSessionManager(RoomRepository roomRepository, MatchRecordRepository matchRecordRepository,
-                              SimpMessagingTemplate messagingTemplate,
-                              HitResolver hitResolver, Leaderboard leaderboard) {
-        this.roomRepository = roomRepository;
-        this.matchRecordRepository = matchRecordRepository;
-        this.messagingTemplate = messagingTemplate;
-        this.hitResolver = hitResolver;
-        this.leaderboard = leaderboard;
+    public GameSessionManager(GameEngine gameEngine, RoomBroadcaster roomBroadcaster,
+                               MatchRecordService matchRecordService) {
+        this.gameEngine = gameEngine;
+        this.roomBroadcaster = roomBroadcaster;
+        this.matchRecordService = matchRecordService;
     }
 
-    public synchronized boolean startMatch(Integer roomId) {
-        Room room = roomRepository.findById(roomId).orElse(null);
-        if (room == null) {
-            log.warn("Cannot start match: room {} not found", roomId);
-            return false;
+    public synchronized void startMatch(Room room, Set<String> participantUsernames) {
+        if (activeSessions.containsKey(room.getCode())) {
+            throw new MatchAlreadyRunningException(room.getCode());
         }
 
-        if (sessions.containsKey(roomId)) {
-            GameSession existing = sessions.get(roomId);
-            if (existing.isRunning()) {
-                log.warn("Match already running for room {}", roomId);
-                return false;
-            } else {
-                sessions.remove(roomId);
-            }
+        GameSession session = new GameSession(
+                room, participantUsernames, gameEngine, roomBroadcaster, this::onSessionEnded);
+        activeSessions.put(room.getCode(), session);
+        session.start(); // non-blocking: just schedules the first tick and returns immediately
+    }
+
+    public synchronized void stopMatch(String roomCode) {
+        GameSession session = activeSessions.get(roomCode);
+        if (session == null) {
+            throw new MatchNotRunningException(roomCode);
         }
-
-        GameSession session = new GameSession(room, messagingTemplate, hitResolver);
-        sessions.put(roomId, session);
-        boolean started = session.start();
-        if (started) {
-            // Register all players in the room for leaderboard tracking
-            for (Player player : room.getPlayers()) {
-                leaderboard.registerPlayer(roomId, player);
-            }
-            log.info("Match started for room {} (id={})", room.getCode(), roomId);
-        }
-        return started;
+        session.stop(); // triggers onSessionEnded (below) synchronously, which removes it from the map
     }
 
-    public synchronized void stopMatch(Integer roomId) {
-        GameSession session = sessions.remove(roomId);
-        if (session != null) {
-            // Persist match records before stopping
-            persistMatchRecords(roomId, session);
-            session.stop();
-            leaderboard.clearRoom(roomId);
-            log.info("Match stopped for room {}", roomId);
-        }
+    /**
+     * Called by a GameSession itself, exactly once, the instant it stops - whether
+     * that was a host ending the match early or the duration timer expiring on its
+     * own (see GameSession.stop()'s javadoc). Removing the session from the map AND
+     * kicking off Sprint 6's persistence step both happen from this one spot so
+     * neither can be missed or double-run.
+     */
+    private synchronized void onSessionEnded(GameSession session) {
+        activeSessions.remove(session.getRoomCode());
+        matchRecordService.persistMatchRecords(session);
     }
 
-    private void persistMatchRecords(Integer roomId, GameSession session) {
-        Room room = roomRepository.findById(roomId).orElse(null);
-        if (room == null) {
-            log.warn("Cannot persist match records: room {} not found", roomId);
-            return;
-        }
-
-        Instant timestamp = Instant.now();
-        for (Player player : room.getPlayers()) {
-            int playerId = player.getId();
-            int score = leaderboard.getScore(roomId, playerId);
-            int shots = session.getShotsFired(playerId);
-            int hitCount = session.getHits(playerId);
-            double accuracy = session.getAccuracy(playerId);
-
-            MatchRecord record = new MatchRecord(
-                    playerId, roomId, score, accuracy, shots, hitCount, timestamp
-            );
-            matchRecordRepository.save(record);
-            log.info("Saved MatchRecord for player {} in room {}: score={}, accuracy={:.2%}, shots={}, hits={}",
-                    playerId, roomId, score, accuracy, shots, hitCount);
-        }
+    public boolean isRunning(String roomCode) {
+        return activeSessions.containsKey(roomCode);
     }
 
-    public GameSession getSession(Integer roomId) {
-        return sessions.get(roomId);
+    /** Used by RoomWebSocketController to find the right room's arena when a fire event comes in. */
+    public GameSession getSession(String roomCode) {
+        return activeSessions.get(roomCode);
     }
 
-    public boolean isMatchRunning(Integer roomId) {
-        GameSession session = sessions.get(roomId);
-        return session != null && session.isRunning();
-    }
-
-    public boolean isRoomHost(Integer roomId, Integer playerId) {
-        Room room = roomRepository.findById(roomId).orElse(null);
-        return room != null && room.getHost() != null && room.getHost().getId().equals(playerId);
-    }
-
-    public void handleHit(Integer roomId, int targetId, int playerId) {
-        GameSession session = sessions.get(roomId);
-        if (session != null) {
-            boolean hit = session.handleHit(targetId, playerId);
-            if (hit) {
-                int newScore = leaderboard.addScore(roomId, playerId, 10);
-                broadcastHitResult(roomId, targetId, playerId, newScore, true, false);
-                broadcastLeaderboard(roomId);
-            }
-        }
-    }
-
-    private void broadcastHitResult(Integer roomId, int targetId, int playerId, int newScore, boolean hit, boolean rateLimited) {
-        com.aimmaster.dto.FireBroadcast broadcast = new com.aimmaster.dto.FireBroadcast(
-                targetId, playerId, newScore, System.currentTimeMillis(), hit, rateLimited
-        );
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, broadcast);
-    }
-
-    private void broadcastLeaderboard(Integer roomId) {
-        List<com.aimmaster.dto.LeaderboardEntry> standings = leaderboard.getStandings(roomId);
-        com.aimmaster.dto.LeaderboardBroadcast broadcast = new com.aimmaster.dto.LeaderboardBroadcast(
-                standings, System.currentTimeMillis()
-        );
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, broadcast);
-    }
-
-    public void cleanupRoom(Integer roomId) {
-        stopMatch(roomId);
+    /**
+     * Sprint 9 (admin dashboard): every currently-running match, for a live system
+     * snapshot. Returns a read-only view backed directly by the ConcurrentHashMap -
+     * same safe-to-iterate-while-changing pattern RoomArena already uses for its
+     * targets, so a room starting/stopping while the admin dashboard is mid-read
+     * can never throw a ConcurrentModificationException.
+     */
+    public Collection<GameSession> getAllActiveSessions() {
+        return Collections.unmodifiableCollection(activeSessions.values());
     }
 }

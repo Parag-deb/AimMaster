@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AimMaster</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="page-center">
+    <div class="auth-wrapper">
+
+        <!-- ===== Auth card (shown until logged in) ===== -->
+        <div class="card" id="authCard">
+            <h1 class="brand" style="text-align:center;font-size:32px;margin-bottom:18px;">AimMaster</h1>
+            <div class="tabs">
+                <button id="tabLogin" class="active" type="button">Log in</button>
+                <button id="tabRegister" type="button">Register</button>
+            </div>
+
+            <form id="authForm">
+                <label for="username">Username</label>
+                <input type="text" id="username" autocomplete="username" required minlength="3" maxlength="32">
+
+                <label for="password">Password</label>
+                <input type="password" id="password" autocomplete="current-password" required minlength="6">
+
+                <div class="btn-row">
+                    <button type="submit" id="authSubmit" style="flex:1;">Log in</button>
+                </div>
+                <div class="error-text" id="authError"></div>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+<!-- ===== App shell (shown once logged in) ===== -->
+<div id="appShell" style="display:none;">
+    <div class="app-shell">
+                <aside class="sidebar">
+                    <div class="brand">AimMaster</div>
+                    <button class="nav-item active" data-page="lobby">Lobby</button>
+                    <button class="nav-item" data-page="history">Match history</button>
+
+                    <div class="nav-section">
+                        <div class="nav-section-title">Account</div>
+                        <button class="nav-item" data-page="account">Account</button>
+                        <button class="nav-item" data-page="settings">Settings</button>
+                    </div>
+
+                    <div class="nav-section">
+                        <div class="nav-section-title">More</div>
+                        <button class="nav-item" data-page="about">About us</button>
+                        <button class="nav-item" data-page="contact">Contact us</button>
+                    </div>
+
+                    <div style="margin-top:auto; padding-top:10px; border-top:1px solid var(--panel-border);">
+                        <button class="nav-item" id="logoutBtn">Log out</button>
+                    </div>
+                </aside>
+
+                <main class="main-content">
+                    <!-- Lobby -->
+                    <section id="page-lobby" class="page">
+                        <div class="content-card">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span>Logged in as <strong id="welcomeUsername"></strong></span>
+                                <span class="pill medium" id="welcomeTheme"></span>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+                            <h2>Create a room</h2>
+                            <label for="difficulty">Difficulty</label>
+                            <select id="difficulty">
+                                <option value="EASY">Easy</option>
+                                <option value="MEDIUM" selected>Medium</option>
+                                <option value="HARD">Hard</option>
+                            </select>
+
+                            <label for="duration">Duration (seconds)</label>
+                            <input type="number" id="duration" value="90" min="30" max="3600">
+
+                            <label for="maxPlayers">Max players</label>
+                            <input type="number" id="maxPlayers" value="4" min="1" max="6">
+
+                            <div class="btn-row">
+                                <button id="createRoomBtn" type="button" style="flex:1;">Create room</button>
+                            </div>
+                            <div class="error-text" id="createError"></div>
+                        </div>
+
+                        <div class="content-card">
+                            <h2>Join a room</h2>
+                            <label for="joinCode">Room code</label>
+                            <input type="text" id="joinCode" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;">
+                            <div class="btn-row">
+                                <button id="joinRoomBtn" type="button" style="flex:1;">Join room</button>
+                                <button id="spectateBtn" type="button" class="secondary" style="flex:1;">Spectate</button>
+                            </div>
+                            <div class="error-text" id="joinError"></div>
+                            <div class="hint-text">Spectating watches the match live without taking a player slot or being able to fire.</div>
+                        </div>
+                    </section>
+
+                    <!-- History -->
+                    <section id="page-history" class="page" style="display:none;">
+                        <div class="content-card">
+                            <h2>Match History</h2>
+                            <div id="historyContent">Loading…</div>
+                        </div>
+                    </section>
+
+                    <!-- Account -->
+                    <section id="page-account" class="page" style="display:none;">
+                        <div class="content-card">
+                            <h2>Account</h2>
+                            <div class="error-text" id="accountError"></div>
+                            <div class="error-text" id="accountSuccess" style="color:var(--success);"></div>
+
+                            <label for="accountUsername">Username</label>
+                            <input type="text" id="accountUsername" maxlength="32">
+
+                            <label for="accountTheme">Theme</label>
+                            <select id="accountTheme">
+                                <option value="regular">Regular</option>
+                                <option value="dark">Dark</option>
+                                <option value="light">Light</option>
+                            </select>
+
+                            <div class="btn-row">
+                                <button id="updateProfileBtn" type="button" style="flex:1;">Save profile</button>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+                            <h2>Change password</h2>
+                            <div class="error-text" id="passwordError"></div>
+                            <div class="error-text" id="passwordSuccess" style="color:var(--success);"></div>
+
+                            <label for="currentPassword">Current password</label>
+                            <input type="password" id="currentPassword">
+
+                            <label for="newPassword">New password</label>
+                            <input type="password" id="newPassword" minlength="6">
+
+                            <div class="btn-row">
+                                <button id="changePasswordBtn" type="button" style="flex:1;">Change password</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Settings -->
+                    <section id="page-settings" class="page" style="display:none;">
+                        <div class="content-card">
+                            <h2>Settings</h2>
+                            <div class="error-text" id="settingsError"></div>
+                            <div class="error-text" id="settingsSuccess" style="color:var(--success);"></div>
+
+                            <div class="toggle-row">
+                                <div>
+                                    <div>Sound effects</div>
+                                    <div class="small-hint">Hits, UI clicks, and match-end jingle</div>
+                                </div>
+                                <input type="checkbox" id="settingSound" checked>
+                            </div>
+
+                            <div class="toggle-row">
+                                <div>
+                                    <div>Music</div>
+                                    <div class="small-hint">Background music during matches</div>
+                                </div>
+                                <input type="checkbox" id="settingMusic" checked>
+                            </div>
+
+                            <div class="toggle-row">
+                                <div>
+                                    <div>Show HUD</div>
+                                    <div class="small-hint">Leaderboard and score overlays in-game</div>
+                                </div>
+                                <input type="checkbox" id="settingHud" checked>
+                            </div>
+
+                            <label for="settingCrosshair">Crosshair style</label>
+                            <select id="settingCrosshair">
+                                <option value="circle">Circle</option>
+                                <option value="cross">Cross</option>
+                                <option value="dot">Dot</option>
+                            </select>
+
+                            <label for="settingThreshold">Thumb fold threshold</label>
+                            <input type="range" id="settingThreshold" min="0.1" max="0.9" step="0.05" value="0.35">
+                            <div class="small-hint">Lower = more sensitive. Higher = requires a tighter fold.</div>
+
+                            <div class="btn-row" style="margin-top:16px;">
+                                <button id="saveSettingsBtn" type="button" style="flex:1;">Save settings</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- About -->
+                    <section id="page-about" class="page" style="display:none;">
+                        <div class="content-card">
+                            <h2>About AimMaster</h2>
+                            <p>AimMaster is a real-time multiplayer aim-training game built with Spring Boot,
+                            WebSocket/STOMP, and MediaPipe hand tracking.</p>
+                            <p>Players join rooms, compete in timed matches, and track their progress through
+                            match history and live leaderboards.</p>
+                            <p><strong>Version:</strong> 1.0.0</p>
+                            <p><strong>Stack:</strong> Java 17, Spring Boot 3, H2, JWT, SockJS/STOMP, MediaPipe Hands</p>
+                        </div>
+                    </section>
+
+                    <!-- Contact -->
+                    <section id="page-contact" class="page" style="display:none;">
+                        <div class="content-card">
+                            <h2>Contact us</h2>
+                            <div class="error-text" id="contactError"></div>
+                            <div class="error-text" id="contactSuccess" style="color:var(--success);"></div>
+
+                            <label for="contactSubject">Subject</label>
+                            <input type="text" id="contactSubject" placeholder="Bug report / feature request">
+
+                            <label for="contactMessage">Message</label>
+                            <textarea id="contactMessage" rows="5" placeholder="Tell us what's on your mind…" style="width:100%;padding:10px 12px;background:#0e1425;border:1px solid var(--panel-border);border-radius:8px;color:var(--text);font-size:14px;resize:vertical;"></textarea>
+
+                            <div class="btn-row" style="margin-top:16px;">
+                                <button id="sendContactBtn" type="button" style="flex:1;">Send message</button>
+                            </div>
+                            <div class="small-hint">This is a demo frontend — messages are not actually sent anywhere.</div>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/landing.js"></script>
+</body>
+</html>

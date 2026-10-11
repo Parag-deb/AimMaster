@@ -1,12 +1,8 @@
 package com.aimmaster.model;
 
 /**
- * The three kinds of targets the player can shoot.
- *
- * In the game, each type moves differently:
- * - BIRD flies horizontally across the screen.
- * - BALLOON drifts slowly upward.
- * - FRUIT drops downward with gravity.
+ * The different kinds of targets that can spawn in the arena.
+ * Plain enum, no framework needed - just a fixed set of allowed values.
  */
 public enum TargetType {
     BIRD,

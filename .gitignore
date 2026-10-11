@@ -1,9 +1,11 @@
 ignore/
+ScreenShoots/
+aimmaster/ngrok-v3-stable-windows-amd64/
 # Maven
 target/
 aimmaster/target/
 
-# IDEs
+
 .idea/
 .vscode/
 *.iml
@@ -11,17 +13,15 @@ aimmaster/target/
 .project
 .settings/
 
-# OS
+
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Logs
+
 *.log
 *.tmp
 
-# Environment
+
 .env
 
-
-.kilo/

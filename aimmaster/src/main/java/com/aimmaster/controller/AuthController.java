@@ -7,11 +7,17 @@ import com.aimmaster.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+/**
+ * FR1: register / login. This controller is intentionally thin - it does no password
+ * checking or token building itself, it just hands the validated request to AuthService
+ * and returns whatever comes back (or lets GlobalExceptionHandler turn an exception into
+ * a clean error response).
+ *
+ * "@RestController" = "this class handles HTTP requests and every method's return value
+ * becomes the JSON response body" (instead of the name of an HTML page to render).
+ */
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {

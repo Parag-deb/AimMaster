@@ -1,55 +1,47 @@
 package com.aimmaster.service;
 
+import com.aimmaster.model.RoomArena;
 import com.aimmaster.model.Target;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.stereotype.Component;
 
 /**
- * Thread-safe hit resolution service.
+ * FR13/FR14: given a fire event's target id, decide hit or miss - and guarantee that
+ * if two players' shots name the same target at nearly the same millisecond, only
+ * ONE of them can ever be told "you hit it."
  *
- * Responsibility:
- * - Given a target and a player, atomically check if the target is still alive
- *   and mark it dead in a single synchronized operation.
- * - This prevents the race condition where two players shoot the same target
- *   at nearly the same time and both would score.
+ * This class does almost nothing on its own on purpose: the actual race-safety comes
+ * from Target.tryMarkDead()'s AtomicBoolean.compareAndSet, built back in Sprint 4
+ * specifically so this moment wouldn't need its own locking. HitResolver's whole job
+ * is just "look the target up, ask it to atomically die, report what happened" - a
+ * classic naive bug here would be:
  *
- * The check-and-mark must be atomic — we do NOT use separate isAlive() check
- * followed by hit() because there's a gap where another thread could sneak in.
- * Instead, we synchronize on the target object itself during the entire operation.
+ *     if (target.isAlive()) {       // Thread A and Thread B BOTH see "alive" here
+ *         target.markDead();        // BOTH threads then mark it dead
+ *         award point to A AND B    // double-scored - exactly what we must avoid
+ *     }
+ *
+ * tryMarkDead() collapses that "check, then separately act" gap into one atomic step,
+ * so there's no window where two threads can both see "still alive."
+ *
+ * Like GameEngine, HitResolver holds no per-room state itself (the RoomArena is
+ * passed in), so one shared instance is safe to reuse across every room at once.
  */
-@Service
+@Component
 public class HitResolver {
 
-    private static final Logger log = LoggerFactory.getLogger(HitResolver.class);
-
     /**
-     * Attempts to register a hit on the given target by the given player.
-     *
-     * @param target   the target being shot at
-     * @param playerId the ID of the player shooting
-     * @return true if the hit was registered (target was alive), false if target was already dead
+     * @return the Target that was hit, if this call is the one that legitimately
+     *         killed it; null if there's no such target, or it was already dead
+     *         (already hit by someone else, or despawned) - either way, a miss.
      */
-    public boolean resolveHit(Target target, int playerId) {
+    public Target resolveHit(RoomArena arena, String targetId) {
+        if (targetId == null) {
+            return null;
+        }
+        Target target = arena.findById(targetId);
         if (target == null) {
-            return false;
+            return null; // unknown/already-removed target id - treat as a miss, not an error
         }
-
-        // Synchronize on the target itself to make check-and-mark atomic.
-        // This ensures only one thread can execute this block for a given target at a time.
-        synchronized (target) {
-            if (target.isAlive()) {
-                target.hit();
-                log.debug("Player {} hit target {}", playerId, target.getId());
-                return true;
-            } else {
-                log.debug("Player {} missed target {} (already dead)", playerId, target.getId());
-                return false;
-            }
-        }
+        return target.tryMarkDead() ? target : null;
     }
 }

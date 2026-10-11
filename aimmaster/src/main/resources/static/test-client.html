@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<!--
+  Throwaway test client (started in Sprint 3, extended in Sprint 4 & 5) - NOT the
+  real game frontend (that's Sprint 7's MediaPipe + Canvas page). Purpose: manually
+  verify the real-time transport, the live game loop, and hit resolution without
+  needing a webcam or the real frontend yet.
+
+  How to use:
+   1. Run the app: mvn spring-boot:run
+   2. Register two players and log in as each (see the README for curl commands) to
+      get two JWTs.
+   3. As player 1: create a room (POST /api/rooms) to get a room code, then start the
+      match (POST /api/rooms/{code}/start).
+   4. As player 2: join that room (POST /api/rooms/{code}/join).
+   5. Open this page in two browser tabs: http://localhost:8080/test-client.html
+      - Tab 1: paste player 1's token + the room code, click Connect.
+      - Tab 2: paste player 2's token + the SAME room code, click Connect.
+   6. Sprint 3 check: type a message in one tab, click "Send test message" - it
+      should appear in BOTH tabs.
+   7. Sprint 4 check: once the match is started, both tabs' "Arena" line should be
+      ticking up in target count/elapsed time together, independently of any other
+      room you might also have running.
+   8. Sprint 5 check: copy a target id from the Arena line's target list into "Target
+      id to fire at" in BOTH tabs, and click "Fire!" in both AT ABOUT THE SAME TIME.
+      Only one tab's click should produce a "HIT" log line - the other was too late,
+      because the target was already dead. The score in the hit log should only ever
+      go up by one per real hit.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AimMaster - WebSocket / Game Loop / Hit Test Client</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; }
+        input, button { font-size: 14px; padding: 6px; margin: 4px 0; }
+        input[type=text] { width: 100%; box-sizing: border-box; }
+        #log { border: 1px solid #ccc; padding: 8px; height: 220px; overflow-y: auto; background: #fafafa; }
+        #arenaStatus { border: 1px solid #ccc; padding: 8px; background: #eef6ff; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+        .msg { margin: 2px 0; }
+        .hit { color: #0a7d00; font-weight: bold; }
+        .status-ok { color: green; }
+        .status-bad { color: crimson; }
+    </style>
+</head>
+<body>
+<h2>AimMaster — WebSocket / Game Loop / Hit test client</h2>
+
+<label>JWT token (from /api/auth/login)</label>
+<input type="text" id="token" placeholder="eyJhbGciOi...">
+
+<label>Room code</label>
+<input type="text" id="roomCode" placeholder="ABC123">
+
+<button id="connectBtn">Connect</button>
+<span id="status"></span>
+
+<h3>Sprint 3 — send a test message</h3>
+<input type="text" id="content" placeholder="hello room">
+<button id="sendBtn" disabled>Send test message</button>
+
+<h3>Sprint 4 — live arena (updates every ~100ms once the host starts the match)</h3>
+<div id="arenaStatus">(not started yet)</div>
+
+<h3>Sprint 5 — fire at a target</h3>
+<input type="text" id="targetId" placeholder="paste a target id from the Arena line above">
+<button id="fireBtn" disabled>Fire!</button>
+
+<h3>Log</h3>
+<div id="log"></div>
+
+<script>
+    let stompClient = null;
+    let currentRoomCode = null;
+
+    function logLine(text, cssClass) {
+        const el = document.createElement('div');
+        el.className = 'msg' + (cssClass ? ' ' + cssClass : '');
+        el.textContent = new Date().toLocaleTimeString() + ' — ' + text;
+        document.getElementById('log').appendChild(el);
+        el.scrollIntoView();
+    }
+
+    document.getElementById('connectBtn').addEventListener('click', () => {
+        const token = document.getElementById('token').value.trim();
+        const roomCode = document.getElementById('roomCode').value.trim();
+        if (!token || !roomCode) {
+            alert('Enter both a token and a room code first.');
+            return;
+        }
+        currentRoomCode = roomCode;
+
+        // The JWT goes in the handshake URL's query string - see
+        // config.WebSocketAuthInterceptor for why (browsers can't attach a custom
+        // Authorization header to a WebSocket/SockJS handshake).
+        const socket = new SockJS('/ws?token=' + encodeURIComponent(token));
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, () => {
+            document.getElementById('status').textContent = ' connected';
+            document.getElementById('status').className = 'status-ok';
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('fireBtn').disabled = false;
+
+            stompClient.subscribe('/topic/room/' + roomCode, (frame) => {
+                const body = JSON.parse(frame.body);
+
+                if (body.targets !== undefined) {
+                    // Sprint 4: an arena-state tick - overwrite one status line instead
+                    // of flooding the log at ~10 messages/second.
+                    const ids = body.targets.map(t => t.type + ':' + t.id.slice(0, 8)).join('\n  ');
+                    document.getElementById('arenaStatus').textContent =
+                        'elapsed: ' + body.elapsedSeconds.toFixed(1) + 's, targets: ' + body.targets.length +
+                        (body.targets.length ? '\n  ' + ids : '');
+                } else if (body.hitByUsername !== undefined) {
+                    // Sprint 5: a confirmed hit.
+                    logLine('HIT — ' + body.hitByUsername + ' destroyed ' + body.targetId +
+                        ' (score now ' + body.newScore + ')', 'hit');
+                } else {
+                    // Sprint 3: the plain test-message echo.
+                    logLine('[' + body.senderUsername + '] ' + body.content);
+                }
+            });
+            logLine('Subscribed to /topic/room/' + roomCode);
+        }, (error) => {
+            document.getElementById('status').textContent = ' connection failed (bad/expired token?)';
+            document.getElementById('status').className = 'status-bad';
+            logLine('Connection error: ' + error);
+        });
+    });
+
+    document.getElementById('sendBtn').addEventListener('click', () => {
+        const content = document.getElementById('content').value;
+        stompClient.send('/app/room/' + currentRoomCode + '/test', {}, JSON.stringify({content: content}));
+    });
+
+    document.getElementById('fireBtn').addEventListener('click', () => {
+        const targetId = document.getElementById('targetId').value.trim();
+        if (!targetId) {
+            alert('Paste a target id first (copy one from the Arena line above).');
+            return;
+        }
+        stompClient.send('/app/room/' + currentRoomCode + '/fire', {}, JSON.stringify({targetId: targetId}));
+    });
+</script>
+</body>
+</html>

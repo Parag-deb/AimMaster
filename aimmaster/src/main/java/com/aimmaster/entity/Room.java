@@ -1,57 +1,95 @@
 package com.aimmaster.entity;
 
-import com.aimmaster.model.Target;
-import com.aimmaster.model.TargetType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Embedded;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
+import com.aimmaster.model.Difficulty;
+import jakarta.persistence.*;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
+import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
+/**
+ * A match room, now backed by the database.
+ *
+ * DESIGN DECISION (Sprint 2 task: "decide and document" persisted vs. in-memory Room):
+ * Room is a HYBRID.
+ *   - PERSISTED here: room code, host, settings (difficulty/duration/maxPlayers), and
+ *     which players have joined. This is small, slow-changing data - fine for the DB.
+ *   - NOT persisted / stays in-memory only: live target positions, timers, and the
+ *     running game loop. That data changes every ~100ms (Sprint 4's GameSession) and
+ *     writing it to a database on every tick would both be slow and pointless once the
+ *     match ends. Sprint 1's Target class therefore stays a plain in-memory object -
+ *     it never gets an @Entity annotation.
+ * This matches AimMaster_03_Agent_Instructions.md Section 4: "persistence only at
+ * defined boundaries" - not inside the hot game loop.
+ *
+ * The Difficulty enum is reused as-is from com.aimmaster.model (Sprint 1) - no need
+ * to fork a second copy just because this class is now an entity.
+ */
 @Entity
 @Table(name = "rooms")
 public class Room {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Long id;
 
-    @Column(unique = true, nullable = false, length = 10)
+    @Column(nullable = false, unique = true, length = 6)
     private String code;
 
-    @ManyToOne
+    @ManyToOne(optional = false)
     @JoinColumn(name = "host_id", nullable = false)
     private Player host;
 
-    @Embedded
-    private RoomSettings settings;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Difficulty difficulty;
 
-    @Transient
-    private final List<Player> players = new ArrayList<>();
+    @Column(nullable = false)
+    private int durationSeconds;
 
-    @Transient
-    private final List<Target> targets = new ArrayList<>();
+    @Column(nullable = false)
+    private int maxPlayers;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
+    // Who has joined this room so far. This is persisted membership (useful for
+    // "who was in this room" history / reconnects later) - it is NOT the live
+    // in-memory game state.
+    @ManyToMany
+    @JoinTable(
+            name = "room_players",
+            joinColumns = @JoinColumn(name = "room_id"),
+            inverseJoinColumns = @JoinColumn(name = "player_id")
+    )
+    private Set<Player> players = new LinkedHashSet<>();
 
     protected Room() {
     }
 
-    public Room(String code, Player host, RoomSettings settings) {
+    public Room(String code, Player host, Difficulty difficulty, int durationSeconds, int maxPlayers) {
         this.code = code;
-        this.host = Objects.requireNonNull(host);
-        this.settings = Objects.requireNonNull(settings);
-        this.players.add(host);
+        this.host = host;
+        this.difficulty = difficulty;
+        this.durationSeconds = durationSeconds;
+        this.maxPlayers = maxPlayers;
+        this.createdAt = Instant.now();
+        this.players.add(host); // host automatically counts as a joined player
     }
 
-    public Integer getId() {
+    /** @return true if adding one more player would exceed maxPlayers */
+    public boolean isFull() {
+        return players.size() >= maxPlayers;
+    }
+
+    public void addPlayer(Player player) {
+        if (isFull()) {
+            throw new IllegalStateException("Room " + code + " is full");
+        }
+        players.add(player);
+    }
+
+    public Long getId() {
         return id;
     }
 
@@ -63,43 +101,23 @@ public class Room {
         return host;
     }
 
-    public RoomSettings getSettings() {
-        return settings;
+    public Difficulty getDifficulty() {
+        return difficulty;
     }
 
-    public List<Player> getPlayers() {
-        return Collections.unmodifiableList(players);
+    public int getDurationSeconds() {
+        return durationSeconds;
     }
 
-    public List<Target> getTargets() {
-        return Collections.unmodifiableList(targets);
+    public int getMaxPlayers() {
+        return maxPlayers;
     }
 
-    public boolean addPlayer(Player player) {
-        if (players.size() >= settings.getMaxPlayers()) {
-            return false;
-        }
-        if (players.contains(player)) {
-            return false;
-        }
-        players.add(player);
-        return true;
+    public Set<Player> getPlayers() {
+        return players;
     }
 
-    public boolean removePlayer(Player player) {
-        boolean removed = players.remove(player);
-        return removed;
-    }
-
-    public void addTarget(Target target) {
-        targets.add(target);
-    }
-
-    public void removeTarget(Target target) {
-        targets.remove(target);
-    }
-
-    public void clearTargets() {
-        targets.clear();
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 }

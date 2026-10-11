@@ -1,135 +1,76 @@
 package com.aimmaster.service;
 
 import com.aimmaster.dto.LeaderboardEntry;
-import com.aimmaster.entity.Player;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 /**
- * Per-room live leaderboard service.
+ * Live, in-memory score tracking for ONE currently-running match (FR7). Just like
+ * RoomArena, this is deliberately NOT a database table - see
+ * AimMaster_03_Agent_Instructions.md Section 4: "don't recompute the whole leaderboard
+ * by reloading from the DB on every hit... keep it in-memory per room for the live
+ * loop, persist only at Sprint 6's defined boundary" (match end, as a MatchRecord).
  *
- * Responsibility:
- * - Tracks scores for players in a room during an active match.
- * - Provides thread-safe score increments and leaderboard snapshots.
- * - Does NOT persist to database — that happens at match end (Sprint 6).
- * - Kept in-memory for low-latency updates during the ~100ms game loop.
+ * One Leaderboard belongs to exactly one GameSession/match, created fresh when a
+ * match starts and discarded when it ends - same lifecycle as RoomArena.
+ *
+ * THREAD SAFETY: addPoint() can be called concurrently by multiple players' fire
+ * events landing at nearly the same time (different STOMP messages, potentially
+ * handled on different threads), so scores live in a ConcurrentHashMap of
+ * AtomicIntegers - incrementAndGet() is a single atomic operation, so two hits by the
+ * same player at the same instant can never silently overwrite each other's point.
  */
-@Service
 public class Leaderboard {
 
-    private static final Logger log = LoggerFactory.getLogger(Leaderboard.class);
+    private final Map<String, AtomicInteger> scoresByUsername = new ConcurrentHashMap<>();
 
-    /**
-     * Room ID -> (Player ID -> Score).
-     * Uses ConcurrentHashMap for thread-safe access from WebSocket handlers.
-     */
-    private final Map<Integer, Map<Integer, AtomicInteger>> roomScores = new ConcurrentHashMap<>();
+    /** Awards one point to this username and returns their new total score. */
+    public int addPoint(String username) {
+        return scoresByUsername
+                .computeIfAbsent(username, u -> new AtomicInteger(0))
+                .incrementAndGet();
+    }
 
-    /**
-     * Room ID -> (Player ID -> Username) for display in leaderboard broadcasts.
-     */
-    private final Map<Integer, Map<Integer, String>> roomPlayerNames = new ConcurrentHashMap<>();
-
-    /**
-     * Records a player joining a room so their name is available for leaderboard display.
-     */
-    public void registerPlayer(int roomId, Player player) {
-        roomScores.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>());
-        roomPlayerNames.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>());
-        roomPlayerNames.get(roomId).putIfAbsent(player.getId(), player.getUsername());
-        // Initialize score to 0 if not present
-        roomScores.get(roomId).putIfAbsent(player.getId(), new AtomicInteger(0));
+    /** Sets a player's score to exactly 0, keeping their entry in the map so they
+     *  still appear in standings() with a zero score. */
+    public void resetScore(String username) {
+        scoresByUsername.computeIfAbsent(username, u -> new AtomicInteger(0)).set(0);
     }
 
     /**
-     * Removes a player from the room's scoreboard.
+     * Initializes a player's score to a specific value (typically 0) without
+     * incrementing. Useful for pre-populating the leaderboard at match start or
+     * adding mid-match joiners. If the player already has a score, it is
+     * overwritten to the given value.
      */
-    public void unregisterPlayer(int roomId, int playerId) {
-        Map<Integer, AtomicInteger> scores = roomScores.get(roomId);
-        if (scores != null) {
-            scores.remove(playerId);
-        }
-        Map<Integer, String> names = roomPlayerNames.get(roomId);
-        if (names != null) {
-            names.remove(playerId);
-        }
+    public void initializeScore(String username, int score) {
+        scoresByUsername.computeIfAbsent(username, u -> new AtomicInteger(score)).set(score);
+    }
+
+    public int getScore(String username) {
+        AtomicInteger score = scoresByUsername.get(username);
+        return score == null ? 0 : score.get();
     }
 
     /**
-     * Increments the player's score by the given points (default 10 per hit).
-     * Thread-safe: uses AtomicInteger for the score value.
-     *
-     * @param roomId   the room where the hit occurred
-     * @param playerId the player who scored
-     * @param points   points to add (typically 10)
-     * @return the player's new total score
+     * Everyone who has scored at least one point so far. Used by Sprint 8's
+     * getAllInvolvedUsernames() so a player who joined mid-match and actually
+     * scored isn't silently left out of match history at persistence time.
      */
-    public int addScore(int roomId, int playerId, int points) {
-        Map<Integer, AtomicInteger> scores = roomScores.get(roomId);
-        if (scores == null) {
-            log.warn("Score increment for unknown room {}", roomId);
-            return 0;
-        }
-        AtomicInteger scoreRef = scores.computeIfAbsent(playerId, k -> new AtomicInteger(0));
-        int newScore = scoreRef.addAndGet(points);
-        log.debug("Player {} score in room {} is now {}", playerId, roomId, newScore);
-        return newScore;
+    public Set<String> getUsernames() {
+        return Set.copyOf(scoresByUsername.keySet());
     }
 
-    /**
-     * Gets the current score for a player in a room.
-     */
-    public int getScore(int roomId, int playerId) {
-        Map<Integer, AtomicInteger> scores = roomScores.get(roomId);
-        if (scores == null) {
-            return 0;
-        }
-        AtomicInteger scoreRef = scores.get(playerId);
-        return scoreRef != null ? scoreRef.get() : 0;
-    }
-
-    /**
-     * Builds a sorted leaderboard snapshot for the given room.
-     * Sorted by score descending (highest first).
-     *
-     * @param roomId the room to get standings for
-     * @return list of LeaderboardEntry sorted by score (highest first)
-     */
-    public List<LeaderboardEntry> getStandings(int roomId) {
-        Map<Integer, AtomicInteger> scores = roomScores.get(roomId);
-        Map<Integer, String> names = roomPlayerNames.get(roomId);
-
-        if (scores == null || scores.isEmpty()) {
-            return List.of();
-        }
-
-        return scores.entrySet().stream()
-                .map(entry -> {
-                    int playerId = entry.getKey();
-                    int score = entry.getValue().get();
-                    String username = names != null ? names.getOrDefault(playerId, "Player" + playerId)
-                            : "Player" + playerId;
-                    return new LeaderboardEntry(playerId, username, score);
-                })
-                .sorted(Comparator.comparingInt(LeaderboardEntry::score).reversed())
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Clears all scores and player names for a room (called when match ends or room is cleaned up).
-     */
-    public void clearRoom(int roomId) {
-        roomScores.remove(roomId);
-        roomPlayerNames.remove(roomId);
-        log.debug("Cleared leaderboard for room {}", roomId);
+    /** Current standings, highest score first. Used by Sprint 6's non-real-time snapshot endpoint. */
+    public List<LeaderboardEntry> standings() {
+        return scoresByUsername.entrySet().stream()
+                .map(e -> new LeaderboardEntry(e.getKey(), e.getValue().get()))
+                .sorted(Comparator.comparingInt(LeaderboardEntry::getScore).reversed())
+                .toList();
     }
 }

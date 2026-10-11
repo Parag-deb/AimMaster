@@ -1,75 +1,89 @@
 package com.aimmaster.exception;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 
-import java.util.stream.Collectors;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
+/**
+ * Catches exceptions thrown anywhere in a controller/service and turns them into a
+ * clean JSON error response instead of a raw stack trace. Set up once here (Sprint 2);
+ * every later sprint that adds a new custom exception just adds one more @ExceptionHandler
+ * method to this same class instead of creating its own handler.
+ *
+ * "@RestControllerAdvice" = "@ControllerAdvice" + "@ResponseBody": Spring watches every
+ * controller for these exception types and routes them here automatically.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(UsernameAlreadyExistsException.class)
+    public ResponseEntity<Object> handleUsernameTaken(UsernameAlreadyExistsException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<Object> handleInvalidCredentials(InvalidCredentialsException ex) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    @ExceptionHandler(RoomNotFoundException.class)
+    public ResponseEntity<Object> handleRoomNotFound(RoomNotFoundException ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(RoomFullException.class)
+    public ResponseEntity<Object> handleRoomFull(RoomFullException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(MatchAlreadyRunningException.class)
+    public ResponseEntity<Object> handleMatchAlreadyRunning(MatchAlreadyRunningException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(MatchNotRunningException.class)
+    public ResponseEntity<Object> handleMatchNotRunning(MatchNotRunningException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(NotRoomHostException.class)
+    public ResponseEntity<Object> handleNotRoomHost(NotRoomHostException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(AccessForbiddenException.class)
+    public ResponseEntity<Object> handleAccessForbidden(AccessForbiddenException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    /** Fired automatically when a @Valid DTO fails its @NotBlank/@Size/etc. checks. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ProblemDetail> handleValidation(MethodArgumentNotValidException ex) {
+    public ResponseEntity<Object> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
+                .findFirst()
                 .map(err -> err.getField() + ": " + err.getDefaultMessage())
-                .collect(Collectors.joining("; "));
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setTitle("Validation failed");
-        problem.setDetail(message);
-        return ResponseEntity.badRequest().body(problem);
+                .orElse("Invalid request");
+        return buildResponse(HttpStatus.BAD_REQUEST, message);
     }
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ProblemDetail> handleUnreadable(HttpMessageNotReadableException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setTitle("Malformed request");
-        problem.setDetail("Request body is invalid or contains unexpected values");
-        return ResponseEntity.badRequest().body(problem);
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ProblemDetail> handleIllegalArgument(IllegalArgumentException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setTitle("Invalid argument");
-        problem.setDetail(ex.getMessage());
-        return ResponseEntity.badRequest().body(problem);
-    }
-
-    @ExceptionHandler(BadRequestException.class)
-    public ResponseEntity<ProblemDetail> handleBadRequest(BadRequestException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setTitle("Bad request");
-        problem.setDetail(ex.getMessage());
-        return ResponseEntity.badRequest().body(problem);
-    }
-
-    @ExceptionHandler(NotFoundException.class)
-    public ResponseEntity<ProblemDetail> handleNotFound(NotFoundException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
-        problem.setTitle("Not found");
-        problem.setDetail(ex.getMessage());
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
-    }
-
-    @ExceptionHandler(BadCredentialsException.class)
-    public ResponseEntity<ProblemDetail> handleBadCredentials(BadCredentialsException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
-        problem.setTitle("Invalid credentials");
-        problem.setDetail("Username or password is incorrect");
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
-    }
-
+    /** Safety net - anything unexpected still comes back as clean JSON, not a 500 stack trace dump. */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ProblemDetail> handleGeneric(Exception ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
-        problem.setTitle("Internal server error");
-        problem.setDetail("An unexpected error occurred");
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+    public ResponseEntity<Object> handleUnexpected(Exception ex) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong. Please try again.");
+    }
+
+    private ResponseEntity<Object> buildResponse(HttpStatus status, String message) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", status.value());
+        body.put("error", status.getReasonPhrase());
+        body.put("message", message);
+        return ResponseEntity.status(status).body(body);
     }
 }

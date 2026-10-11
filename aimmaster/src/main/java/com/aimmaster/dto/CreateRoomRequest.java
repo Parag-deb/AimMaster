@@ -1,26 +1,48 @@
 package com.aimmaster.dto;
 
-import com.aimmaster.model.TargetType;
+import com.aimmaster.model.Difficulty;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 
-public record CreateRoomRequest(
-        @NotBlank(message = "Room code is required")
-        @Size(min = 3, max = 10, message = "Code must be between 3 and 10 characters")
-        String code,
+/** What the host sends to POST /api/rooms to create a new room (FR9). */
+public class CreateRoomRequest {
 
-        @NotNull(message = "Difficulty is required")
-        TargetType difficulty,
+    @NotNull(message = "difficulty is required")
+    private Difficulty difficulty;
 
-        @Min(value = 10, message = "Duration must be at least 10 seconds")
-        @Max(value = 3600, message = "Duration must be at most 3600 seconds")
-        int durationSeconds,
+    @Min(value = 30, message = "duration must be at least 30 seconds")
+    @Max(value = 3600, message = "duration must be at most 1 hour")
+    private int durationSeconds;
 
-        @Min(value = 1, message = "Max players must be at least 1")
-        @Max(value = 100, message = "Max players must be at most 100")
-        int maxPlayers
-) {
+    @Min(value = 1, message = "a room needs at least 1 player slot")
+    @Max(value = 6, message = "rooms are capped at 6 players (see NFR: Scalability)")
+    private int maxPlayers;
+
+    public CreateRoomRequest() {
+    }
+
+    public Difficulty getDifficulty() {
+        return difficulty;
+    }
+
+    public void setDifficulty(Difficulty difficulty) {
+        this.difficulty = difficulty;
+    }
+
+    public int getDurationSeconds() {
+        return durationSeconds;
+    }
+
+    public void setDurationSeconds(int durationSeconds) {
+        this.durationSeconds = durationSeconds;
+    }
+
+    public int getMaxPlayers() {
+        return maxPlayers;
+    }
+
+    public void setMaxPlayers(int maxPlayers) {
+        this.maxPlayers = maxPlayers;
+    }
 }

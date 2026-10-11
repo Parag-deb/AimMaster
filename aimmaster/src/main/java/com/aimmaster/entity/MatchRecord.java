@@ -1,14 +1,20 @@
 package com.aimmaster.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 
 import java.time.Instant;
 
+/**
+ * A permanent record of one player's result in one finished match (FR8). Written
+ * exactly once, at match end - see service.MatchRecordService.persistMatchRecords(),
+ * which is only ever called from GameSession's stop() path, never from the ~100ms
+ * game loop tick (see AimMaster_03_Agent_Instructions.md Section 4: "persistence
+ * only at defined boundaries").
+ *
+ * `accuracy` is stored as a plain fraction (0.0 - 1.0 = hits / total fire attempts,
+ * or 0.0 if the player never fired at all) - DTOs are free to format that as a
+ * percentage for display without the database needing to care about formatting.
+ */
 @Entity
 @Table(name = "match_records")
 public class MatchRecord {
@@ -17,67 +23,52 @@ public class MatchRecord {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "player_id", nullable = false)
-    private Integer playerId;
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "player_id", nullable = false)
+    private Player player;
 
-    @Column(name = "room_id", nullable = false)
-    private Integer roomId;
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "room_id", nullable = false)
+    private Room room;
 
     @Column(nullable = false)
-    private Integer score;
+    private int score;
 
     @Column(nullable = false)
-    private Double accuracy;
+    private double accuracy;
 
-    @Column(name = "shots_fired", nullable = false)
-    private Integer shotsFired;
-
-    @Column(name = "hits", nullable = false)
-    private Integer hits;
-
-    @Column(name = "timestamp", nullable = false)
+    @Column(nullable = false, updatable = false)
     private Instant timestamp;
 
     protected MatchRecord() {
     }
 
-    public MatchRecord(Integer playerId, Integer roomId, Integer score,
-                       Double accuracy, Integer shotsFired, Integer hits, Instant timestamp) {
-        this.playerId = playerId;
-        this.roomId = roomId;
+    public MatchRecord(Player player, Room room, int score, double accuracy) {
+        this.player = player;
+        this.room = room;
         this.score = score;
         this.accuracy = accuracy;
-        this.shotsFired = shotsFired;
-        this.hits = hits;
-        this.timestamp = timestamp;
+        this.timestamp = Instant.now();
     }
 
     public Long getId() {
         return id;
     }
 
-    public Integer getPlayerId() {
-        return playerId;
+    public Player getPlayer() {
+        return player;
     }
 
-    public Integer getRoomId() {
-        return roomId;
+    public Room getRoom() {
+        return room;
     }
 
-    public Integer getScore() {
+    public int getScore() {
         return score;
     }
 
-    public Double getAccuracy() {
+    public double getAccuracy() {
         return accuracy;
-    }
-
-    public Integer getShotsFired() {
-        return shotsFired;
-    }
-
-    public Integer getHits() {
-        return hits;
     }
 
     public Instant getTimestamp() {

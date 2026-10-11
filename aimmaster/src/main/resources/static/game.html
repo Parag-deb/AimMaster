@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AimMaster — Match</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="game-shell">
+    <div class="top-bar">
+        <div>
+            <span class="brand" style="font-size:20px;">AimMaster</span>
+            &nbsp;·&nbsp;
+            <span class="stat">Room <strong id="roomCodeLabel">—</strong></span>
+        </div>
+        <div class="stat">Difficulty <span id="difficultyPill" class="pill medium">—</span> <span id="spectatorBadge" class="pill medium" style="display:none;">👁 Spectating</span></div>
+        <div class="stat">Elapsed <strong id="elapsedLabel">0.0s</strong></div>
+        <div class="stat">Your score <strong id="myScoreLabel">0</strong></div>
+        <div id="hostControls" style="display:none;">
+            <button id="startMatchBtn" type="button">Start match</button>
+            <button id="stopMatchBtn" type="button" class="danger" style="display:none;">Stop match</button>
+        </div>
+    </div>
+
+    <div class="arena-wrap" id="arenaWrap">
+        <!-- Hidden - only used as MediaPipe's raw input frame source. Everything visible is drawn on the canvas. -->
+        <video id="inputVideo" autoplay playsinline muted style="display:none;"></video>
+
+        <canvas id="gameCanvas" width="1000" height="600"></canvas>
+
+        <div class="hud-overlay">
+            <div class="status-banner" id="statusBanner">Connecting…</div>
+            <div class="leaderboard-panel">
+                <h3>Leaderboard</h3>
+                <div id="leaderboardRows"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls-row">
+        <button class="secondary" id="backBtn" type="button">← Back to lobby</button>
+        <button class="secondary" id="enableCameraBtn" type="button">Enable camera</button>
+    </div>
+    <p class="hint-text" id="hintText" style="text-align:center;">
+        Point your index finger to aim, fold your thumb in to fire. Server decides every hit —
+        this page only ever shows what the server confirms.
+    </p>
+</div>
+
+<!-- MediaPipe Hands (FR3/FR4/FR5) - locked tech stack choice, Overview.md Section 8 -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<!-- STOMP over WebSocket (Sprint 3's locked transport) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+<script src="/js/api.js"></script>
+<script src="/js/game.js"></script>
+</body>
+</html>
